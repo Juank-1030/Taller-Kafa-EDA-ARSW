@@ -42,19 +42,117 @@ El desarrollo de software ha evolucionado desde arquitecturas monolíticas y cli
 
 Clasifique qué procesos deberían ser síncronos, asíncronos o híbridos para una tienda en línea: *consultar productos, crear pedido, validar pago, enviar notificación, actualizar analítica y registrar auditoría*. Justifique brevemente su decisión.
 
-<details>
-<summary><b>Desarrollo de la Actividad 1</b></summary>
 
-| Proceso | Tipo | Justificación |
-|---------|------|---------------|
-| Consultar productos | Síncrono (REST) | |
-| Crear pedido | Híbrido | |
-| Validar pago | Asíncrono (Kafka) | |
-| Enviar notificación | Asíncrono (Kafka) | |
-| Actualizar analítica | Asíncrono (Kafka) | |
-| Registrar auditoría | Asíncrono (Kafka) | |
+| Proceso | Tipo | Arquitectura | Justificación principal |
+|---------|------|-------------|----------------------|
+| Consultar productos | **Síncrono** | REST / API Gateway + Caché | El usuario necesita ver el catálogo en tiempo real. Es una consulta de lectura pura donde la inmediatez importa. |
+| Crear pedido | **Híbrido** | REST + Event Broker | El cliente recibe confirmación inmediata vía REST, pero los procesos posteriores (pago, inventario) se disparan como eventos asíncronos. |
+| Validar pago | **Asíncrono** | Event Broker (Kafka) | No es necesario bloquear al cliente. El pago se procesa en segundo plano y se notifica el resultado mediante eventos. |
+| Enviar notificación | **Asíncrono** | Event Broker (Kafka) | Enviar un correo o SMS no debe retrasar la respuesta al cliente. Es un efecto secundario que puede ocurrir en cualquier momento. |
+| Actualizar analítica | **Asíncrono** | Event Broker (Kafka) | Los indicadores de negocio se construyen con datos históricos; no requieren respuesta inmediata y se benefician del reprocesamiento. |
+| Registrar auditoría | **Asíncrono** | Event Broker (Kafka) | La trazabilidad debe registrarse sin bloquear el flujo principal. Kafka además conserva el evento original para auditorías forenses. |
 
-**Justificación general:**
+---
+
+#### Análisis por proceso — puntos de vista y arquitecturas involucradas
+
+##### 1. Consultar productos — **Síncrono (REST)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | Espera ver productos al instante. Una respuesta lenta degrada la experiencia de compra. |
+| **Arquitectura** | Una API REST con caché (Redis / CDN) ofrece la mejor latencia. Kafka no está diseñado para consultas puntuales ni devolución de respuestas inmediatas. |
+| **Negocio** | Si el usuario no ve los productos, no compra. La disponibilidad y velocidad del catálogo impactan directamente las ventas. |
+| **Alternativa** | Podría usarse GraphQL o gRPC si se necesita flexibilidad en las consultas, pero sigue siendo síncrono. |
+
+**Arquitectura recomendada:** API Gateway → Servicio de Catálogo (REST) → Caché + Base de datos
+
+---
+
+##### 2. Crear pedido — **Híbrido (REST + Event Broker)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | Necesita saber que su pedido fue recibido (confirmación inmediata). No necesita esperar a que se valide el pago ni se reserve el inventario. |
+| **Arquitectura** | REST recibe el pedido y responde 201 Created. Simultáneamente se publica un evento `order-created` en Kafka para que los servicios downstream procesen el resto. |
+| **Negocio** | El pedido queda en estado `CREATED`. Si el pago falla después, se cancela y se notifica al cliente. Esto es **consistencia eventual**, aceptable para este dominio. |
+| **Riesgo** | El cliente cree que su pedido está confirmado, pero podría ser cancelado si el pago se rechaza. Se mitiga con comunicación clara (ej. "Pedido recibido, pendiente de confirmación"). |
+
+**Arquitectura recomendada:** REST (order-service) → Kafka (topic `orders`) → Consumer Groups (`payment-service`, `inventory-service`)
+
+```
+Cliente ─POST /orders─→ Order Service ──→ Kafka (orders topic)
+                          ↓ 201 Created        ↓
+                      Respuesta al      Payment Service (async)
+                      cliente           Inventory Service (async)
+```
+
+---
+
+##### 3. Validar pago — **Asíncrono (Kafka)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | No necesita esperar la validación bancaria en línea. Puede recibir una notificación después. |
+| **Arquitectura** | El `payment-service` consume el evento `order-created` desde Kafka, procesa el pago y publica `payment-approved` o `payment-rejected`. Esto desacopla el pago del resto del sistema. |
+| **Negocio** | La validación puede tomar segundos o minutos (ej. autenticación 3D Secure). Bloquear al cliente es inaceptable. |
+| **Punto de vista crítico** | Podría argumentarse que validar el pago *antes* de confirmar el pedido evita ventas fallidas. Sin embargo, en la práctica se logra con un *hold* (pre-autorización) síncrono rápido y el resto asíncrono, manteniendo el modelo híbrido. |
+
+**Arquitectura recomendada:** Kafka (topic `orders`) → payment-service (Consumer Group `payment-service`) → Kafka (topic `payments`)
+
+---
+
+##### 4. Enviar notificación — **Asíncrono (Kafka)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | La notificación puede llegar segundos o minutos después sin afectar su experiencia. |
+| **Arquitectura** | El `notification-service` consume eventos de múltiples topics (`payments`, `inventory`, `invoices`) y envía correos/SMS sin acoplar al emisor original. |
+| **Negocio** | Si el servicio de notificaciones falla, no debe impedir que el pedido se procese. Con Kafka, el evento persiste y se reprocesa cuando el servicio se recupere. |
+| **Alternativa** | Para notificaciones críticas (ej. alerta de fraude) podría necesitarse sincronía, pero para una tienda en línea es un caso menor. |
+
+**Arquitectura recomendada:** Kafka (varios topics) → notification-service → Proveedor de emails/SMS
+
+---
+
+##### 5. Actualizar analítica — **Asíncrono (Kafka)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | Es transparente para el usuario. No hay expectativa de inmediatez. |
+| **Arquitectura** | El `analytics-service` consume eventos de forma independiente para construir dashboards, KPIs y reportes. Kafka permite reprocesar eventos históricos si se necesita recalcular métricas. |
+| **Negocio** | La analítica se beneficia del *event sourcing*: cada evento es un hecho inmutable que alimenta indicadores sin afectar el flujo transaccional. |
+| **Punto de vista crítico** | Si la analítica necesita datos en tiempo real (ej. detectar fraude durante la compra), podría requerirse un flujo híbrido con procesamiento rápido (Kafka Streams), pero sin cambiar a síncrono. |
+
+**Arquitectura recomendada:** Kafka (todos los topics relevantes) → analytics-service → Base de datos analítica / Dashboard
+
+---
+
+##### 6. Registrar auditoría — **Asíncrono (Kafka)**
+
+| Perspectiva | Argumento |
+|-------------|-----------|
+| **Usuario** | Es transparente. El usuario nunca espera a que se registre una auditoría. |
+| **Arquitectura** | El `audit-service` consume eventos de todos los servicios. Kafka retiene los eventos (retención configurable), funcionando como un log de auditoría distribuido por sí mismo. |
+| **Negocio** | La auditoría requiere trazabilidad completa e inmutable. Kafka garantiza orden por partición y persistencia, ideal para cumplimiento normativo (SOX, PCI-DSS). |
+| **Punto de vista crítico** | Si una regulación exige que el registro de auditoría se haya completado antes de confirmar la transacción, entonces se necesitaría un enfoque híbrido con confirmación del audit-service antes de responder al cliente. |
+
+**Arquitectura recomendada:** Kafka (topic `audit`) → audit-service → Almacenamiento de auditoría / Índice de búsqueda (Elasticsearch)
+
+---
+
+#### Resumen arquitectónico general
+
+| Proceso | Estilo de comunicación | Broker de eventos | REST API | Caché | Consistencia |
+|---------|----------------------|-------------------|----------|-------|-------------|
+| Consultar productos | Síncrono | ❌ | ✅ | ✅ | Fuerte |
+| Crear pedido | Híbrido | ✅ | ✅ | ❌ | Eventual |
+| Validar pago | Asíncrono | ✅ | ❌ | ❌ | Eventual |
+| Enviar notificación | Asíncrono | ✅ | ❌ | ❌ | Eventual |
+| Actualizar analítica | Asíncrono | ✅ | ❌ | ❌ | Eventual |
+| Registrar auditoría | Asíncrono | ✅ | ❌ | ❌ | Eventual |
+
+> **Conclusión:** La tienda en línea requiere una **arquitectura híbrida** donde REST maneja las consultas y la confirmación inmediata, mientras que Kafka orquesta los procesos de negocio asíncronos. Esto maximiza desacoplamiento, escalabilidad y tolerancia a fallos, alineándose con los principios de EDA descritos en el capítulo 1.
 
 </details>
 
