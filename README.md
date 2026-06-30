@@ -167,20 +167,124 @@ Apache Kafka es una plataforma distribuida de *event streaming* que funciona com
 
 Analice una configuración con un topic `orders`, **una partición**, **factor de replicación 1**, **mensajes sin clave** y **retención de 24 horas**. Identifique riesgos y proponga mejoras para un ambiente productivo.
 
-<details>
-<summary><b>Desarrollo de la Actividad 2</b></summary>
 
-**Riesgos identificados:**
 
-1.
-2.
-3.
+#### Análisis de la configuración propuesta
 
-**Mejoras propuestas:**
+| Elemento | Configuración actual | Problema en producción |
+|----------|---------------------|----------------------|
+| Particiones | 1 | Sin paralelismo — un solo consumidor activo por grupo |
+| Factor de replicación | 1 | Sin tolerancia a fallos — pérdida total si el broker cae |
+| Clave | Sin clave (`null`) | Distribución aleatoria, sin orden por entidad |
+| Retención | 24 horas | Ventana de reprocesamiento y auditoría muy corta |
 
-1.
-2.
-3.
+---
+
+#### Riesgos identificados
+
+##### 1. Partición única — Cuello de botella y escalabilidad horizontal nula
+
+| Perspectiva | Impacto |
+|-------------|---------|
+| **Rendimiento (throughput)** | Toda la escritura y lectura pasa por una sola partición. El límite es la capacidad de un solo broker. Si el volumen de pedidos crece, el topic `orders` se convierte en un cuello de botella. |
+| **Paralelismo de consumo** | Dentro de un Consumer Group, **una partición solo puede ser asignada a un consumidor**. Si hay 3 réplicas del `payment-service`, solo 1 estará activa consumiendo; las otras 2 estarán inactivas. |
+| **Recuperación** | Si un consumidor falla, el rebalanceo reasigna la partición, pero el reemplazo hereda toda la carga acumulada sin posibilidad de dividir el trabajo. |
+| **Orden vs. escalabilidad** | Se sacrifica escalabilidad por un orden global que en realidad Kafka no necesita garantizar. |
+
+**Ejemplo concreto:** Una tienda en línea procesa 10,000 pedidos/hora. Con 1 partición, el límite de escritura es ~1-5 MB/s. Cualquier pico navideño satura el broker. Con 6 particiones se distribuye la carga 6×.
+
+##### 2. Factor de replicación 1 — Sin tolerancia a fallos (Single Point of Failure)
+
+| Perspectiva | Impacto |
+|-------------|---------|
+| **Disponibilidad** | Si el broker se cae (fallo de hardware, reinicio, OOM), el topic `orders` deja de existir. Todos los eventos no consumidos se pierden permanentemente. |
+| **Durabilidad** | No hay copia de seguridad. Un `kill -9` o un fallo de disco implica pérdida de datos. |
+| **Mantenimiento** | No se puede reiniciar el broker de forma transparente. Cualquier actualización requiere ventana de mantenimiento con downtime. |
+| **Recuperación ante desastre** | Si el datacenter falla, no hay réplica en otro rack o zona de disponibilidad. |
+
+
+
+##### 3. Mensajes sin clave — Imposibilidad de orden por entidad y compactación
+
+| Perspectiva | Impacto |
+|-------------|---------|
+| **Orden de eventos por pedido** | Si en el futuro se agregan más particiones, los eventos de un mismo `orderId` se distribuirán aleatoriamente entre particiones. No se podrá garantizar que `payment-approved` se procese después de `order-created` para el mismo pedido. |
+| **Idempotencia del productor** | Kafka usa la clave para determinar la partición y para la deduplicación del productor idempotente. Sin clave, la idempotencia es más limitada. |
+| **Log compaction** | La compactación de logs (retención basada en clave) no funciona sin clave. No se puede mantener el último estado de cada entidad. |
+| **Distribución predecible** | Sin clave, el particionamiento sigue un round-robin o sticky partitioner, imposible de predecir o depurar. |
+
+**Ejemplo concreto:** El pedido ORD-1001 pasa por varias etapas: `order-created` → `payment-approved` → `inventory-reserved`. Si algún sistema externo pregunta "¿cuál es el estado actual de ORD-1001?", sin clave no hay una manera eficiente de rastrear todos sus eventos.
+
+##### 4. Retención de 24 horas — Reprocesamiento y auditoría limitados
+
+| Perspectiva | Impacto |
+|-------------|---------|
+| **Reprocesamiento** | Si un consumidor falla por más de 24 horas (ej. fin de semana), al recuperarse ya no encontrará los eventos en Kafka. Se pierden para siempre. |
+| **Auditoría y forense** | Una investigación posterior (ej. un chargeback de un pedido de hace 3 días) no podrá consultar los eventos originales. |
+| **Analítica retrospectiva** | Si se necesita recalcular métricas del mes anterior, no es posible porque los eventos ya expiraron. |
+| **Recuperación de errores** | Si un bug en el consumidor hace que procese incorrectamente eventos, y el bug se descubre después de 24 horas, no se puede re-procesar desde el origen. |
+
+**Ejemplo concreto:** El `notification-service` tiene un bug que impide enviar notificaciones el 30 de junio. El bug se descubre el 2 de julio. Los eventos del 30 de junio ya expiraron (retención 24h). Todos esos pedidos se quedaron sin notificación y no hay forma de recuperarlos.
+
+---
+
+#### Mejoras propuestas para un ambiente productivo
+
+| Problema | Mejora | Configuración recomendada | Atributo de calidad |
+|----------|--------|--------------------------|---------------------|
+| **1 partición** | Aumentar particiones para paralelismo y escalabilidad | `partitions: 6` (o `partitions: 3 × número de consumidores esperados`) | Escalabilidad, Rendimiento |
+| **Replicación 1** | Aumentar factor de replicación con múltiples brokers | `replication-factor: 3`, mínimo 3 brokers en el cluster | Disponibilidad, Durabilidad |
+| **Sin clave** | Usar `orderId` como clave de particionamiento | `key = orderId` en cada mensaje | Orden por entidad, Idempotencia |
+| **Retención 24h** | Aumentar retención según necesidad de reprocesamiento y auditoría | `retention.ms: 604800000` (7 días) o retención infinita para auditoría | Mantenibilidad, Auditoría |
+
+##### Configuración productiva recomendada
+
+```yaml
+# docker-compose.yml — Configuración básica para producción mínima
+services:
+  kafka-1:
+    image: apache/kafka:3.7.0
+    container_name: arsw-kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 3000
+      KAFKA_NUM_PARTITIONS: 3
+```
+
+```bash
+# Creación del topic orders para producción
+kafka-topics.sh --create \
+  --topic orders \
+  --bootstrap-server localhost:9092 \
+  --partitions 6 \
+  --replication-factor 3 \
+  --config retention.ms=604800000 \
+  --config min.insync.replicas=2
+```
+
+##### Análisis de impacto de las mejoras
+
+| Atributo de calidad | Antes | Después |
+|---------------------|-------|---------|
+| **Escalabilidad** | Fallo. 1 partición = 1 consumidor activo | Check. 6 particiones = hasta 6 consumidores en paralelo |
+| **Disponibilidad** | Fallo. Replicación 1 = caída del broker = pérdida total | Check. Replicación 3 = tolerancia a 2 brokers caídos |
+| **Durabilidad** | Fallo. Sin copia = pérdida de datos en fallo. | Check. ISR mínimo 2 = datos seguros aunque 1 broker falle |
+| **Orden por entidad** | Fallo. Sin clave = distribución aleatoria | Check. `orderId` como clave = orden garantizado por pedido |
+| **Reprocesamiento** | Fallo. 24h = ventana mínima | Check. 7 días = recuperación ante errores prolongados |
+| **Auditoría** | Fallo. Eventos expiran antes de detectar problemas | Check. Retención extendida permite trazabilidad forense |
+
+> **Conclusión:** La configuración original es aceptable únicamente para un laboratorio local o entorno de desarrollo. Para producción se requieren **múltiples particiones** (escalabilidad), **factor de replicación ≥ 2** (disponibilidad), **claves de particionamiento** (orden y consistencia) y **retención extendida** (reprocesamiento y auditoría).
 
 </details>
 
@@ -283,28 +387,33 @@ Se implementa una aplicación Spring Boot con productor y consumidor Kafka. La c
 
 Documente el recorrido del evento desde la solicitud HTTP hasta el consumidor. Indique topic, clave, partición, consumidor, Consumer Group y evidencia en Kafka UI.
 
-<details>
-<summary><b>Desarrollo de la Actividad 4</b></summary>
 
-**Recorrido del evento:**
 
-1. **Solicitud HTTP:** `POST /orders` con body `{"customerId":"...", "total": ...}`
-2. **Controlador:** `OrderController.createOrder()` genera `OrderCreatedEvent`
-3. **Productor:** `OrderEventProducer.publishOrderCreated()` envía al topic `orders`
-4. **Kafka:** Asigna partición según la clave (`orderId`)
-5. **Consumidor:** `OrderEventConsumer.consume()` recibe el evento
+#### Recorrido completo del evento
 
-| Elemento | Valor |
-|----------|-------|
-| Topic | `orders` |
-| Clave | `orderId` |
-| Partición | |
-| Offset | |
-| Consumidor | `OrderEventConsumer` |
-| Consumer Group | `inventory-service` |
-| Evidencia Kafka UI | |
+```
+┌─────────┐   POST /orders    ┌────────────────┐   KafkaTemplate.send()    ┌──────────┐   Consume   ┌──────────────────────┐
+│ Cliente │ ────────────────→ │ OrderController │ ──────────────────────→ │ Kafka     │ ────────→ │ OrderEventConsumer    │
+│ (curl)  │                   │ (RestController) │                         │ (Broker)  │           │ (groupId=inventory)   │
+└─────────┘                   └────────────────┘                         └──────────┘           └──────────────────────┘
+                                 │                                            │                          │
+                                 │ 1. Crea OrderCreatedEvent                   │ 2. Asigna partición       │ 4. Procesa evento
+                                 │    (orderId, customerId,                     │    usando hash(orderId)   │
+                                 │     total, status, occurredAt)               │    % numPartitions        │
+                                 │                                            │                          │
+                                 │                                            │ 3. Almacena con offset    │
+                                 │                                            │    secuencial            │
+                                 ▼                                            ▼                          ▼
+                           HTTP 201 Created                          Kafka UI en                      Console output:
+                           + JSON del evento                         http://localhost:8080            "Evento recibido en
+                                                                                                       inventory-service: ORD-..."
+```
 
-**Comando curl de prueba:**
+---
+
+#### Paso a paso detallado
+
+##### Paso 1: Solicitud HTTP (Cliente → OrderController)
 
 ```bash
 curl -X POST http://localhost:8081/orders \
@@ -312,6 +421,171 @@ curl -X POST http://localhost:8081/orders \
   -d '{"customerId":"CUS-01","total":120000}'
 ```
 
+El cliente envía un `POST` al endpoint `/orders` del `order-service` corriendo en el puerto `8081`.
+
+##### Paso 2: Controlador crea el evento
+
+```java
+OrderCreatedEvent event = new OrderCreatedEvent(
+    "ORD-" + UUID.randomUUID(),     // orderId = "ORD-a1b2c3d4-e5f6-..."
+    request.getCustomerId(),        // "CUS-01"
+    request.getTotal(),             // 120000
+    "CREATED",                      // status inicial
+    Instant.now()                   // occurredAt
+);
+```
+
+El controlador construye el evento de dominio con:
+| Campo | Valor ejemplo | Descripción |
+|-------|---------------|-------------|
+| `orderId` | `ORD-a1b2c3d4-e5f6-7890-abcd` | Identificador único del pedido |
+| `customerId` | `CUS-01` | Cliente que realiza la compra |
+| `total` | `120000` | Monto total del pedido |
+| `status` | `CREATED` | Estado inicial |
+| `occurredAt` | `2026-06-30T10:00:00Z` | Marca de tiempo del evento |
+
+##### Paso 3: Productor publica en Kafka
+
+```java
+kafkaTemplate.send("orders", event.getOrderId(), event);
+```
+
+`KafkaTemplate.send(topic, key, value)` realiza lo siguiente:
+1. **Serializa la clave** con `StringSerializer` → `"ORD-a1b2c3d4-..."`
+2. **Serializa el valor** con `JsonSerializer` → `{"orderId":"ORD-...","customerId":"CUS-01","total":120000,"status":"CREATED","occurredAt":"2026-06-30T10:00:00Z"}`
+3. **Calcula la partición**: `partition = hash(key) % numPartitions`
+
+---
+
+##### Paso 4: Kafka asigna partición y offset
+
+Con `KAFKA_NUM_PARTITIONS: 3` en el `docker-compose.yml`, el topic `orders` tiene **3 particiones**.
+
+| Clave (`orderId`) | Hash | Partición asignada | ¿Por qué? |
+|-------------------|------|-------------------|-----------|
+| `ORD-a1b2c3d4-...` | `hash("ORD-...")` | `0`, `1` o `2` | `Math.abs(hashCode) % 3` |
+
+**Detalle del cálculo de partición:**
+
+```
+hash("ORD-a1b2c3...") = 123456789
+partition = 123456789 % 3 = 0  →  Partition 0
+```
+
+El productor envía el registro al líder de la partición `0`. El broker:
+1. Asigna un **offset secuencial** dentro de la partición (ej. offset `42`)
+2. Almacena el evento
+3. Confirma la escritura al productor
+
+```
+Topic: orders
+  Partition 0: [offset 40, offset 41, offset 42 ← NUEVO, ...]
+  Partition 1: [offset 15, offset 16, ...]
+  Partition 2: [offset 28, offset 29, ...]
+```
+
+> **Nota:** La misma clave (`orderId`) siempre produce el mismo hash, por lo que **todos los eventos del mismo pedido caen en la misma partición**, garantizando orden por entidad.
+
+##### Paso 5: Consumidor recibe el evento
+
+```java
+@Service
+public class OrderEventConsumer {
+    @KafkaListener(topics = "orders", groupId = "inventory-service")
+    public void consume(OrderCreatedEvent event) {
+        System.out.println("Evento recibido en inventory-service: " + event.getOrderId());
+    }
+}
+```
+
+El `OrderEventConsumer` pertenece al Consumer Group **`inventory-service`**. Kafka asigna las particiones del topic `orders` a los consumidores activos dentro de este grupo.
+
+**Asignación de particiones (1 consumidor, 3 particiones):**
+
+| Consumidor | Particiones asignadas |
+|------------|----------------------|
+| `OrderEventConsumer` (único) | `0`, `1`, `2` |
+
+Si hubiera **3 instancias** del `inventory-service`:
+
+| Consumidor | Particiones asignadas |
+|------------|----------------------|
+| `OrderEventConsumer-1` | `0` |
+| `OrderEventConsumer-2` | `1` |
+| `OrderEventConsumer-3` | `2` |
+
+Esto permite escalar horizontalmente: más consumidores = más paralelismo.
+
+##### Paso 6: Consumidor deserializa y procesa
+
+El `JsonDeserializer` convierte el JSON recibido de vuelta a un objeto `OrderCreatedEvent`. El método `consume()` imprime:
+
+```
+Evento recibido en inventory-service: ORD-a1b2c3d4-e5f6-7890-abcd
+```
+
+---
+
+#### Evidencia en Kafka UI
+
+Kafka UI está disponible en **http://localhost:8080**. Para verificar la trazabilidad:
+
+| Pantalla | Qué observar | Información |
+|----------|-------------|-------------|
+| **Topics → orders → Partitions** | Lista de particiones (0, 1, 2) | Número de particiones configurado (3) |
+| **Topics → orders → Messages** | Mensajes publicados en orden | Cada mensaje muestra: offset, key, value, timestamp |
+| **Consumers → inventory-service** | Grupo de consumidores activo | Asignación de particiones por consumidor |
+| **Consumers → inventory-service → Lag** | Diferencia entre último offset y offset consumido | Lag = 0 si está al día, > 0 si hay atraso |
+
+**Ejemplo de lo que se ve en Kafka UI para un mensaje:**
+
+| Offset | Key | Value | Partition | Timestamp |
+|--------|-----|-------|-----------|-----------|
+| 42 | `ORD-a1b2c3d4-e5f6-7890-abcd` | `{"orderId":"ORD-...","customerId":"CUS-01","total":120000,"status":"CREATED","occurredAt":"2026-06-30T10:00:00Z"}` | 0 | 2026-06-30 10:00:00 |
+| 43 | `ORD-ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb` | `{"orderId":"ORD-...","customerId":"CUS-02","total":85000,"status":"CREATED","occurredAt":"2026-06-30T10:01:00Z"}` | 1 | 2026-06-30 10:01:00 |
+
+> **Importante:** Al hacer clic en un mensaje en Kafka UI, se puede ver el contenido completo del JSON, confirmando que el evento llegó correctamente con todos sus campos.
+
+---
+
+#### Resumen de trazabilidad
+
+| Elemento solicitado | Valor |
+|---------------------|-------|
+| **Topic** | `orders` |
+| **Clave** | `orderId` (ej. `ORD-a1b2c3d4-e5f6-7890-abcd`) |
+| **Partición** | Determinada por `hash(orderId) % 3` → `0`, `1` o `2` |
+| **Offset** | Secuencial por partición (ej. `42`, `43`, ...) |
+| **Consumidor** | `OrderEventConsumer.consume()` |
+| **Consumer Group** | `inventory-service` (definido en `@KafkaListener`) |
+| **Endpoint HTTP** | `POST http://localhost:8081/orders` |
+| **Serialización** | Key: `StringSerializer`, Value: `JsonSerializer` |
+| **Deserialización** | Key: `StringDeserializer`, Value: `JsonDeserializer` |
+| **Evidencia Kafka UI** | Topics → orders → Messages → ver key, value, partition, offset |
+
+---
+
+#### Puntos clave de la trazabilidad
+
+1. **La clave `orderId` garantiza orden por pedido**: todas las actualizaciones del mismo pedido caen en la misma partición
+2. **3 particiones permiten hasta 3 consumidores en paralelo** dentro del mismo Consumer Group
+3. **El Consumer Group `inventory-service` es diferente al `group-id` por defecto** (`order-service`): el `application.yml` define un valor por defecto, pero `@KafkaListener` lo sobrescribe
+4. **El lag en Kafka UI** indica si el consumidor está procesando eventos al mismo ritmo que se producen
+5. **El evento persiste en Kafka** aunque el consumidor haya procesado (gracias a la retención configurada)
+
+**Comando de verificación en terminal:**
+
+```bash
+# Ver offsets del grupo inventory-service
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group inventory-service --describe
+
+# Output esperado:
+# GROUP              TOPIC   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+# inventory-service  orders  0          42              42              0
+# inventory-service  orders  1          16              16              0
+# inventory-service  orders  2          29              29              0
+```
 </details>
 
 ---
@@ -396,8 +670,7 @@ En sistemas distribuidos los errores son inevitables. Se clasifican en: **transi
 
 Diseñe una estrategia para manejar eventos fallidos en `inventory-service`. Indique cuándo reintentar, cuándo enviar a DLT, qué información revisar y cómo evitar reprocesamientos infinitos.
 
-<details>
-<summary><b>Desarrollo de la Actividad 7</b></summary>
+
 
 **Estrategia propuesta:**
 
