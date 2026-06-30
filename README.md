@@ -199,24 +199,75 @@ Cree los topics `orders`, `payments` e `inventory`. Publique al menos cinco even
 <details>
 <summary><b>Desarrollo de la Actividad 3</b></summary>
 
+**Entorno levantado:**
+
+Se creó `docker-compose.yml` con dos servicios: `kafka` (Apache Kafka 3.7.0 en modo KRaft, sin ZooKeeper, puerto `9092`) y `kafka-ui` (interfaz visual Provectus, puerto `8080`), conectados a través de la red interna de Docker bajo el cluster `arsw-local`.
+
+```bash
+docker compose up -d
+docker ps
+```
+
+**Incidente y corrección:**
+
+El `advertised.listeners` inicial apuntaba a `localhost:9092`, lo cual funciona para clientes dentro del propio contenedor de Kafka, pero impide que **otros contenedores** (como Kafka UI) lo resuelvan, ya que cada contenedor tiene su propio `localhost`. Esto se evidenció con Kafka UI mostrando 0 brokers y la pantalla de Topics cargando indefinidamente (error 500), con logs mostrando `Connection to node 1 (localhost/127.0.0.1:9092) could not be established`.
+
+**Solución:** cambiar el advertised listener para usar el nombre del servicio dentro de la red de Docker:
+
+```yaml
+KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+```
+
+Esto no afecta la conexión desde la máquina host (por ejemplo, una futura app Spring Boot corriendo en `localhost`), porque el puerto sigue mapeado a `localhost:9092` hacia afuera del contenedor.
+
 **Comandos utilizados:**
 
 ```bash
-# Crear topics
+docker exec -it arsw-kafka bash
 
+# Crear topics
+/opt/kafka/bin/kafka-topics.sh --create --topic orders --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
+/opt/kafka/bin/kafka-topics.sh --create --topic payments --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
+/opt/kafka/bin/kafka-topics.sh --create --topic inventory --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
+
+# Verificar
+/opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# Publicar eventos
+/opt/kafka/bin/kafka-console-producer.sh --topic orders --bootstrap-server localhost:9092
 ```
 
-**Eventos publicados:**
+**Eventos publicados (topic `orders`):**
+
+```json
+{"orderId":"ORD-1001","customerId":"CUS-01","total":120000,"status":"CREATED"}
+{"orderId":"ORD-1002","customerId":"CUS-02","total":85000,"status":"CREATED"}
+{"orderId":"ORD-1003","customerId":"CUS-03","total":260000,"status":"CREATED"}
+{"orderId":"ORD-1004","customerId":"CUS-01","total":45000,"status":"CREATED"}
+{"orderId":"ORD-1005","customerId":"CUS-04","total":310000,"status":"CREATED"}
+```
 
 | # | Topic | Clave | Partición | Offset | Contenido |
 |---|-------|-------|-----------|--------|-----------|
-| 1 | orders | | | | |
-| 2 | orders | | | | |
-| 3 | payments | | | | |
-| 4 | payments | | | | |
-| 5 | inventory | | | | |
+| 1 | orders | (vacía) | 0 | 0 | ORD-1001, CUS-01, 120000 |
+| 2 | orders | (vacía) | 0 | 1 | ORD-1002, CUS-02, 85000 |
+| 3 | orders | (vacía) | 0 | 2 | ORD-1003, CUS-03, 260000 |
+| 4 | orders | (vacía) | 0 | 3 | ORD-1004, CUS-01, 45000 |
+| 5 | orders | (vacía) | 0 | 4 | ORD-1005, CUS-04, 310000 |
 
-**Captura de Kafka UI:**
+**Hallazgo / análisis:**
+
+Los 5 eventos cayeron **todos en la partición 0**, a pesar de tener 3 particiones disponibles. Esto se explica porque los mensajes se publicaron **sin clave** (key vacía): sin clave, el cliente productor no garantiza una distribución uniforme inmediata; las versiones recientes del cliente usan una estrategia "sticky" que agrupa mensajes consecutivos en la misma partición por lotes antes de rotar, en lugar de repartir uno a uno entre particiones.
+
+Esto evidencia en la práctica el riesgo que se plantea en la **Actividad 2 (Decisiones de configuración)**: una configuración sin clave de particionamiento puede concentrar la carga en una sola partición, afectando el paralelismo y el balanceo entre consumidores de un mismo grupo.
+
+**Topics creados (verificación en Kafka UI):**
+
+| Topic | Partitions | Replication Factor | Number of messages |
+|-------|-----------|---------------------|---------------------|
+| inventory | 3 | 1 | 0 |
+| orders | 3 | 1 | 5 |
+| payments | 3 | 1 | 0 |
 
 </details>
 
