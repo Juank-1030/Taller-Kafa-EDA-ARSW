@@ -65,7 +65,6 @@ Clasifique qué procesos deberían ser síncronos, asíncronos o híbridos para 
 | **Negocio** | Si el usuario no ve los productos, no compra. La disponibilidad y velocidad del catálogo impactan directamente las ventas. |
 | **Alternativa** | Podría usarse GraphQL o gRPC si se necesita flexibilidad en las consultas, pero sigue siendo síncrono. |
 
-**Arquitectura recomendada:** API Gateway → Servicio de Catálogo (REST) → Caché + Base de datos
 
 ---
 
@@ -145,12 +144,12 @@ Cliente ─POST /orders─→ Order Service ──→ Kafka (orders topic)
 
 | Proceso | Estilo de comunicación | Broker de eventos | REST API | Caché | Consistencia |
 |---------|----------------------|-------------------|----------|-------|-------------|
-| Consultar productos | Síncrono | ❌ | ✅ | ✅ | Fuerte |
-| Crear pedido | Híbrido | ✅ | ✅ | ❌ | Eventual |
-| Validar pago | Asíncrono | ✅ | ❌ | ❌ | Eventual |
-| Enviar notificación | Asíncrono | ✅ | ❌ | ❌ | Eventual |
-| Actualizar analítica | Asíncrono | ✅ | ❌ | ❌ | Eventual |
-| Registrar auditoría | Asíncrono | ✅ | ❌ | ❌ | Eventual |
+| Consultar productos | Síncrono | NO | SI | SI | Fuerte |
+| Crear pedido | Híbrido | SI | SI | NO | Eventual |
+| Validar pago | Asíncrono | SI | NO | NO | Eventual |
+| Enviar notificación | Asíncrono | SI | NO | NO | Eventual |
+| Actualizar analítica | Asíncrono | SI | NO | NO | Eventual |
+| Registrar auditoría | Asíncrono | SI | NO | NO | Eventual |
 
 > **Conclusión:** La tienda en línea requiere una **arquitectura híbrida** donde REST maneja las consultas y la confirmación inmediata, mientras que Kafka orquesta los procesos de negocio asíncronos. Esto maximiza desacoplamiento, escalabilidad y tolerancia a fallos, alineándose con los principios de EDA descritos en el capítulo 1.
 
