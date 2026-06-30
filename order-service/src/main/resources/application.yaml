@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: order-service
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
   kafka:
     bootstrap-servers: localhost:9093
     producer:
@@ -16,3 +19,4 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "edu.eci.arsw.kafka.dto"
+        spring.json.use.type.headers: true

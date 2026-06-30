@@ -393,7 +393,7 @@ Documente el recorrido del evento desde la solicitud HTTP hasta el consumidor. I
 
 ```
 ┌─────────┐   POST /orders    ┌────────────────┐   KafkaTemplate.send()    ┌──────────┐   Consume   ┌──────────────────────┐
-│ Cliente │ ────────────────→ │ OrderController │ ──────────────────────→ │ Kafka     │ ────────→ │ OrderEventConsumer    │
+│ Cliente │ ────────────────→ │ OrderController │ ──────────────────────→ │ Kafka     │ ────────→ │ InventoryEventConsumer │
 │ (curl)  │                   │ (RestController) │                         │ (Broker)  │           │ (groupId=inventory)   │
 └─────────┘                   └────────────────┘                         └──────────┘           └──────────────────────┘
                                  │                                            │                          │
@@ -490,29 +490,49 @@ Topic: orders
 
 ```java
 @Service
-public class OrderEventConsumer {
+public class InventoryEventConsumer {
+
+    private final InventoryEventProducer inventoryProducer;
+
+    public InventoryEventConsumer(InventoryEventProducer inventoryProducer) {
+        this.inventoryProducer = inventoryProducer;
+    }
+
     @KafkaListener(topics = "orders", groupId = "inventory-service")
     public void consume(OrderCreatedEvent event) {
-        System.out.println("Evento recibido en inventory-service: " + event.getOrderId());
+        System.out.println("Inventory Service: procesando pedido " + event.getOrderId());
+
+        boolean reserved = event.getTotal() <= 300000;
+
+        InventoryProcessedEvent inventoryEvent = new InventoryProcessedEvent(
+                "INV-" + UUID.randomUUID(),
+                event.getOrderId(),
+                event.getCustomerId(),
+                reserved ? "RESERVED" : "REJECTED",
+                Instant.now()
+        );
+
+        inventoryProducer.publish(inventoryEvent);
+        System.out.println("Inventory Service: " + inventoryEvent.getStatus() + " para pedido " + event.getOrderId());
     }
 }
 ```
 
-El `OrderEventConsumer` pertenece al Consumer Group **`inventory-service`**. Kafka asigna las particiones del topic `orders` a los consumidores activos dentro de este grupo.
+El `InventoryEventConsumer` pertenece al Consumer Group **`inventory-service`**. Kafka asigna las particiones del topic `orders` a los consumidores activos dentro de este grupo. Este consumidor no solo registra el evento, sino que también ejecuta la lógica de negocio de inventario y publica el resultado en el topic `inventory`.
 
 **Asignación de particiones (1 consumidor, 3 particiones):**
 
 | Consumidor | Particiones asignadas |
 |------------|----------------------|
-| `OrderEventConsumer` (único) | `0`, `1`, `2` |
+| `InventoryEventConsumer` (único) | `0`, `1`, `2` |
 
 Si hubiera **3 instancias** del `inventory-service`:
 
 | Consumidor | Particiones asignadas |
 |------------|----------------------|
-| `OrderEventConsumer-1` | `0` |
-| `OrderEventConsumer-2` | `1` |
-| `OrderEventConsumer-3` | `2` |
+| `InventoryEventConsumer-1` | `0` |
+| `InventoryEventConsumer-2` | `1` |
+| `InventoryEventConsumer-3` | `2` |
 
 Esto permite escalar horizontalmente: más consumidores = más paralelismo.
 
@@ -556,7 +576,7 @@ Kafka UI está disponible en **http://localhost:8080**. Para verificar la trazab
 | **Clave** | `orderId` (ej. `ORD-a1b2c3d4-e5f6-7890-abcd`) |
 | **Partición** | Determinada por `hash(orderId) % 3` → `0`, `1` o `2` |
 | **Offset** | Secuencial por partición (ej. `42`, `43`, ...) |
-| **Consumidor** | `OrderEventConsumer.consume()` |
+| **Consumidor** | `InventoryEventConsumer.consume()` |
 | **Consumer Group** | `inventory-service` (definido en `@KafkaListener`) |
 | **Endpoint HTTP** | `POST http://localhost:8081/orders` |
 | **Serialización** | Key: `StringSerializer`, Value: `JsonSerializer` |
@@ -603,24 +623,157 @@ Proponga los eventos, topics, productores, consumidores, Consumer Groups y clave
 <details>
 <summary><b>Desarrollo de la Actividad 5</b></summary>
 
-**Flujo de eventos:**
+#### Diagrama de flujo general
 
-| Evento | Topic | Productor | Consumidor(es) | Consumer Group | Clave |
-|--------|-------|-----------|----------------|----------------|-------|
-| `order-created` | `orders` | order-service | payment-service, inventory-service | `payment-service`, `inventory-service` | `orderId` |
-| `payment-approved` / `payment-rejected` | `payments` | payment-service | invoice-service, notification-service | `invoice-service`, `notification-service` | `orderId` |
-| `inventory-reserved` / `inventory-rejected` | `inventory` | inventory-service | notification-service | `notification-service` | `orderId` |
-| `invoice-generated` | `invoices` | invoice-service | notification-service | `notification-service` | `orderId` |
-| `notification-sent` | `notifications` | notification-service | analytics-service | `analytics-service` | `orderId` |
-| `audit-record-created` | `audit` | todos | audit-service | `audit-service` | `correlationId` |
+![Diagrama de flujo](diagrams/actividad_5_flujo.png)
+*Fuente: `diagrams/actividad_5_flujo.puml`*
 
-**¿Por qué no usar un único topic `events`?**
+Para regenerar la imagen desde el archivo PlantUML:
 
-1.
-2.
-3.
+```bash
+plantuml diagrams/actividad_5_flujo.puml
+```
 
-</details>
+---
+
+#### Máquina de estados del pedido
+
+Cada pedido atraviesa los siguientes estados, reflejados por los eventos que se publican:
+
+```
+                    ┌──────────────┐
+                    │   CREATED    │  ← order-created (order-service)
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+    ┌──────────────┐ ┌──────────┐ ┌──────────┐
+    │ PAYMENT_     │ │INVENTORY_│ │CANCELLED │
+    │ APPROVED     │ │RESERVED  │ │          │
+    └──────┬───────┘ └─────┬────┘ └──────────┘
+           │               │
+           └───────┬───────┘
+                   ▼
+          ┌──────────────┐
+          │  CONFIRMED   │  ← invoice-generated
+          └──────────────┘
+```
+
+Los eventos `payment-rejected`, `inventory-rejected` o `order-cancelled` llevan al estado `CANCELLED`.
+
+---
+
+#### Tabla completa de eventos, productores, consumidores y grupos
+
+| Evento | Topic | Productor | Consumidores | Consumer Group | Clave | ¿Por qué esa clave? |
+|--------|-------|-----------|-------------|----------------|-------|-------------------|
+| `order-created` | `orders` | order-service | payment-service, inventory-service, analytics-service, audit-service | `payment-svc`, `inventory-svc`, `analytics-svc`, `audit-svc` | `orderId` | Todos los eventos del mismo pedido caen en la misma partición |
+| `order-cancelled` | `orders` | cualquier servicio | payment-service, inventory-service, notification-service, audit-service | `payment-svc`, `inventory-svc`, `notification-svc`, `audit-svc` | `orderId` | Misma entidad de negocio |
+| `payment-approved` | `payments` | payment-service | invoice-service, notification-service, analytics-service, audit-service | `invoice-svc`, `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Relación 1:1 con el pedido |
+| `payment-rejected` | `payments` | payment-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
+| `inventory-reserved` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
+| `inventory-rejected` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
+| `invoice-generated` | `invoices` | invoice-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Asociado al pedido |
+| `notification-sent` | `notifications` | notification-service | analytics-service, audit-service | `analytics-svc`, `audit-svc` | `orderId` | Seguimiento por pedido |
+| `audit-record-created` | `audit` | todos | audit-service | `audit-svc` | `correlationId` | Agrupa toda la trazabilidad de una transacción completa |
+
+---
+
+#### Consistencia eventual — línea de tiempo de un pedido exitoso
+
+```
+Tiempo →
+
+order-created  ──────→ payment-approved ──────→ inventory-reserved ──────→ invoice-generated ──────→ notification-sent
+(orders topic)         (payments topic)          (inventory topic)          (invoices topic)          (notifications topic)
+
+Estado orden:  CREATED ───► PAYMENT_APPROVED ───► INVENTORY_RESERVED ───► CONFIRMED ───► NOTIFIED
+```
+
+Entre cada paso, los servicios downstream pueden estar en diferentes estados de procesamiento. Esto es **consistencia eventual**: no hay una transacción distribuida que garantice que todos los servicios estén sincronizados al mismo instante.
+
+---
+
+#### Análisis: ¿Por qué NO usar un único topic global `events`?
+
+##### 1. Mezcla de eventos de diferente dominio y cardinalidad
+
+| Aspecto | Topic único `events` | Topics por dominio |
+|---------|---------------------|-------------------|
+| **Eventos mezclados** | `order-created`, `payment-approved`, `notification-sent`, `audit-record-created` todo en el mismo lugar | Cada topic contiene solo eventos de un dominio (`orders`, `payments`, `inventory`, ...) |
+| **Clave de particionamiento** | Imposible elegir una clave única — `orderId` no sirve para eventos de auditoría que usan `correlationId` | Cada topic tiene la clave adecuada a su dominio |
+| **Consumidores** | Un consumidor de `payment-service` recibe también eventos de `notification-sent` que no le interesan, desperdiciando recursos y ancho de banda | Cada consumidor solo recibe los eventos de los topics que le corresponden |
+| **Rendimiento** | Un solo topic concentra todo el throughput del sistema, creando un cuello de botella | El throughput se distribuye entre múltiples topics |
+
+**Ejemplo concreto:** El `payment-service` necesita consumir solo `order-created`. Con un topic único `events`, recibe también `notification-sent`, `invoice-generated`, `audit-record-created`, etc. — eventos que debe filtrar del lado del consumidor, aumentando la carga innecesariamente.
+
+##### 2. Dificultad para configurar políticas específicas por tipo de evento
+
+| Política | Topic único `events` | Topics por dominio |
+|----------|---------------------|-------------------|
+| **Retención** | Una sola retención para todos los eventos. Auditoría necesita retención larga (90+ días), notificaciones pueden ser cortas (24h). Forzado a elegir el mínimo común denominador. | Cada topic configura su retención según necesidad: `audit: 90 días`, `notifications: 7 días`, `orders: 30 días` |
+| **Particiones** | Un número de particiones para todos los eventos. `audit` tiene alto volumen (100k eventos/día) vs `invoices` bajo volumen (1k/día). | Cada topic ajusta particiones según su volumen: `audit: 12 particiones`, `invoices: 3 particiones` |
+| **Compresión** | No se puede aplicar compresión selectiva. | Topics de alto volumen pueden usar compresión `snappy` o `zstd` |
+| **DLT (Dead Letter Topic)** | Los DLT se mezclarían: `events.DLT` contendría fallos de todos los servicios sin distinción. | Cada topic tiene su propio DLT: `orders.DLT`, `payments.DLT`, `inventory.DLT` |
+
+**Ejemplo concreto:** La auditoría necesita conservar eventos por 90 días por cumplimiento normativo (SOX). Las notificaciones solo necesitan 24 horas. Con un topic único, se elige 90 días para todos, duplicando el almacenamiento innecesario de notificaciones; o se elige 24 horas y se pierden los registros de auditoría.
+
+##### 3. Dificultad para asignar permisos y control de acceso
+
+| Aspecto | Topic único `events` | Topics por dominio |
+|---------|---------------------|-------------------|
+| **ACLs** | Un solo conjunto de permisos. Todos los servicios pueden leer/escribir todos los eventos. Un bug en `notification-service` podría contaminar eventos de pago. | ACLs granulares: `payment-service` solo escribe en `payments`, `inventory-service` solo en `inventory` |
+| **Aislamiento** | No hay aislamiento entre dominios. | Cada dominio es independiente. |
+| **Seguridad** | Cualquier servicio malicioso o con bug puede afectar todos los eventos del sistema. | El daño está contenido dentro del dominio del servicio. |
+
+##### 4. Dificultad para evolucionar y versionar eventos
+
+| Aspecto | Topic único `events` | Topics por dominio |
+|---------|---------------------|-------------------|
+| **Evolución de esquema** | Si `OrderCreatedEvent` agrega un campo, el cambio afecta a todos los consumidores de `events`, incluso a los que solo procesan `notification-sent` | Solo afecta a los consumidores del topic `orders` |
+| **Compatibilidad hacia atrás** | Más difícil de mantener cuando todos los esquemas conviven en el mismo topic | Cada dominio puede versionarse de forma independiente |
+| **Múltiples versiones** | El schema registry debe manejar versiones de múltiples dominios en un solo sujeto | Cada topic tiene su propio sujeto en el schema registry |
+
+##### 5. Sin aislamiento de fallos
+
+```
+Topic único events:
+  payment-service falla → el consumer group se atasca → el lag crece
+  → TODOS los eventos se retrasan (orders, inventory, notifications, audit)
+  → El sistema completo se degrada
+
+Topics separados:
+  payment-service falla → el lag crece solo en payments topic
+  → orders, inventory, notifications, audit siguen funcionando normalmente
+  → El resto del sistema no se ve afectado
+```
+
+##### 6. Dificultad para monitorear y depurar
+
+| Aspecto | Topic único `events` | Topics por dominio |
+|---------|---------------------|-------------------|
+| **Lag** | Un solo valor de lag mezcla eventos de todos los dominios. Difícil saber qué servicio está atrasado. | Lag por topic: `orders-lag=0`, `payments-lag=5000`, `inventory-lag=0`. Se identifica al instante que `payment-service` está fallando. |
+| **Trazabilidad** | Para rastrear un pedido, hay que filtrar manualmente dentro de un mar de eventos no relacionados. | Cada topic tiene eventos de un solo dominio. Rastrear un pedido es trivial. |
+| **Alertas** | Una alerta de lag alto no distingue qué servicio está fallando. | Alertas específicas por topic = diagnóstico inmediato. |
+
+**Ejemplo concreto:** El `payment-service` deja de funcionar a las 3:00 AM. Con topics separados, una alerta muestra `payments-lag=15000`. El equipo sabe que debe revisar `payment-service`. Con un topic único, la alerta muestra `events-lag=15000` y el equipo debe investigar qué consumidor está fallando entre todos los servicios.
+
+---
+
+#### Resumen de justificación
+
+| Razón | Impacto |
+|-------|---------|
+| **Separación de dominios** | Cada servicio consume solo lo que necesita — eficiencia de red y procesamiento |
+| **Políticas específicas** | Retención, particiones y compresión adaptadas a cada tipo de evento |
+| **Aislamiento de fallos** | Un fallo en un servicio no bloquea los eventos de otros dominios |
+| **Seguridad y ACLs** | Permisos granulares por dominio, menor superficie de ataque |
+| **Evolución independiente** | Cada dominio versiona sus eventos sin afectar a los demás |
+| **Monitoreo granular** | Lag, throughput y errores medibles por dominio, diagnóstico inmediato |
+| **Claves de particionamiento coherentes** | Cada topic usa la clave adecuada a su entidad (`orderId`, `correlationId`) |
+
+> **Conclusión:** Un topic único `events` viola el principio de **separación de responsabilidades** (Single Responsibility Principle) aplicado a la infraestructura de eventos. La organización por dominios con topics dedicados mejora escalabilidad, mantenibilidad, observabilidad y seguridad — exactamente los atributos de calidad que Kafka busca proporcionar.
 
 ---
 
@@ -637,24 +790,210 @@ Cree pedidos con valores diferentes y reconstruya el flujo de eventos en Kafka U
 <details>
 <summary><b>Desarrollo de la Actividad 6</b></summary>
 
-**Pedidos creados:**
+---
 
-| Pedido | Total | Resultado Pago | Resultado Inventario |
-|--------|-------|----------------|---------------------|
-| ORD-001 | 100000 | | |
-| ORD-002 | 260000 | | |
-| ORD-003 | 350000 | | |
+#### Paso 1: Crear los pedidos (3 valores diferentes)
 
-**Flujo de eventos en Kafka UI:**
+Ejecutar los siguientes comandos `curl` contra el endpoint `POST /orders` del `order-service`:
 
-| Evento | Topic | Clave | Partición | Offset | Consumer Group | Lag |
-|--------|-------|-------|-----------|--------|----------------|-----|
-| `order-created` | `orders` | | | | `payment-service` | |
-| `order-created` | `orders` | | | | `inventory-service` | |
-| `payment-approved/rejected` | `payments` | | | | `notification-service` | |
-| `inventory-reserved/rejected` | `inventory` | | | | `notification-service` | |
+```bash
+# Pedido 1: total bajo → pago APROBADO + inventario RESERVADO
+curl -X POST http://localhost:8081/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"CUS-01","total":100000}'
 
-**Capturas de Kafka UI:**
+# Pedido 2: total medio → pago RECHAZADO (>250k) + inventario RESERVADO (≤300k)
+curl -X POST http://localhost:8081/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"CUS-02","total":260000}'
+
+# Pedido 3: total alto → pago RECHAZADO + inventario RECHAZADO (>300k)
+curl -X POST http://localhost:8081/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"CUS-03","total":350000}'
+```
+
+Cada pedido devuelve `201 Created` con el JSON del `OrderCreatedEvent`, incluyendo un `orderId` generado con UUID.
+
+---
+
+#### Paso 2: Resultados esperados según la lógica de negocio
+
+| Pedido | Total | Regla Pago (≤ 250k) | Regla Inventario (≤ 300k) | Resultado Pago | Resultado Inventario |
+|--------|-------|---------------------|--------------------------|----------------|---------------------|
+| ORD-001 | 100000 | ✅ ≤ 250000 | ✅ ≤ 300000 | ✅ **APPROVED** | ✅ **RESERVED** |
+| ORD-002 | 260000 | ❌ > 250000 | ✅ ≤ 300000 | ❌ **REJECTED** | ✅ **RESERVED** |
+| ORD-003 | 350000 | ❌ > 250000 | ❌ > 300000 | ❌ **REJECTED** | ❌ **REJECTED** |
+
+---
+
+#### Paso 3: Reconstrucción del flujo en Kafka UI
+
+Navegar a **http://localhost:8080** y seguir estos pasos para reconstruir el flujo de cada pedido:
+
+**3.1 — Verificar topics creados**
+- Ir a **Topics** → deben aparecer `orders`, `payments`, `inventory` (3 particiones cada uno)
+
+**3.2 — Rastrear ORD-001 (flujo completo exitoso)**
+```
+1. Topics → orders → Messages → buscar "ORD-001" en key/valor
+   → Ver: order-created con status "CREATED"
+2. Topics → payments → Messages → buscar "ORD-001"
+   → Ver: payment-processed con status "APPROVED"
+3. Topics → inventory → Messages → buscar "ORD-001"
+   → Ver: inventory-processed con status "RESERVED"
+```
+
+**3.3 — Rastrear ORD-002 (pago rechazado, inventario reservado)**
+```
+1. Topics → orders → Messages → buscar "ORD-002"
+   → Ver: order-created con status "CREATED"
+2. Topics → payments → Messages → buscar "ORD-002"
+   → Ver: payment-processed con status "REJECTED"
+3. Topics → inventory → Messages → buscar "ORD-002"
+   → Ver: inventory-processed con status "RESERVED"
+```
+
+**3.4 — Rastrear ORD-003 (todo rechazado)**
+```
+1. Topics → orders → Messages → buscar "ORD-003"
+   → Ver: order-created con status "CREATED"
+2. Topics → payments → Messages → buscar "ORD-003"
+   → Ver: payment-processed con status "REJECTED"
+3. Topics → inventory → Messages → buscar "ORD-003"
+   → Ver: inventory-processed con status "REJECTED"
+```
+
+---
+
+#### Paso 4: Eventos generados (resumen completo)
+
+| # | Evento | Topic | Clave | Partición (probable) | Offset (ejemplo) | Consumer Group (consumidor) |
+|---|--------|-------|-------|---------------------|------------------|----------------------------|
+| 1 | `order-created` | `orders` | ORD-001 | hash(ORD-001) % 3 | 0 | `payment-service`, `inventory-service`, `analytics-service` |
+| 2 | `payment-approved` | `payments` | ORD-001 | hash(ORD-001) % 3 | 0 | `notification-service`, `analytics-service` |
+| 3 | `inventory-reserved` | `inventory` | ORD-001 | hash(ORD-001) % 3 | 0 | `notification-service`, `analytics-service` |
+| 4 | `order-created` | `orders` | ORD-002 | hash(ORD-002) % 3 | 1 | `payment-service`, `inventory-service`, `analytics-service` |
+| 5 | `payment-rejected` | `payments` | ORD-002 | hash(ORD-002) % 3 | 1 | `notification-service`, `analytics-service` |
+| 6 | `inventory-reserved` | `inventory` | ORD-002 | hash(ORD-002) % 3 | 1 | `notification-service`, `analytics-service` |
+| 7 | `order-created` | `orders` | ORD-003 | hash(ORD-003) % 3 | 2 | `payment-service`, `inventory-service`, `analytics-service` |
+| 8 | `payment-rejected` | `payments` | ORD-003 | hash(ORD-003) % 3 | 2 | `notification-service`, `analytics-service` |
+| 9 | `inventory-rejected` | `inventory` | ORD-003 | hash(ORD-003) % 3 | 2 | `notification-service`, `analytics-service` |
+
+---
+
+#### Paso 5: Consumer Groups y asignación de particiones
+
+| Consumer Group | Topics que consume | Consumidores activos | Particiones asignadas |
+|----------------|-------------------|---------------------|----------------------|
+| `payment-service` | `orders` | 1 (`PaymentEventConsumer`) | 0, 1, 2 (todas) |
+| `inventory-service` | `orders` | 1 (`InventoryEventConsumer`) | 0, 1, 2 (todas) |
+| `notification-service` | `payments`, `inventory` | 1 (`NotificationEventConsumer`) | 0, 1, 2 (cada topic) |
+| `analytics-service` | `orders`, `payments`, `inventory` | 1 (`AnalyticsEventConsumer`) | 0, 1, 2 (cada topic) |
+
+---
+
+#### Paso 6: Verificación de offsets y lag
+
+**6.1 — Desde Kafka UI**
+- Ir a **Consumers** → seleccionar cada grupo → ver columna **Lag**
+- Si todos los consumidores están activos: `LAG = 0` en todas las particiones
+
+**6.2 — Desde terminal**
+
+```bash
+# Ver todos los grupos
+kafka-consumer-groups.sh --bootstrap-server localhost:9093 --all-groups --describe
+```
+
+Salida esperada (lag = 0 si todo está procesado):
+```
+GROUP                TOPIC      PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+payment-service      orders     0          1               1               0
+payment-service      orders     1          1               1               0
+payment-service      orders     2          1               1               0
+inventory-service    orders     0          1               1               0
+inventory-service    orders     1          1               1               0
+inventory-service    orders     2          1               1               0
+notification-service payments   0          1               1               0
+notification-service payments   1          1               1               0
+notification-service payments   2          1               1               0
+notification-service inventory  0          1               1               0
+notification-service inventory  1          1               1               0
+notification-service inventory  2          1               1               0
+analytics-service    orders     0          1               1               0
+analytics-service    orders     1          1               1               0
+analytics-service    orders     2          1               1               0
+analytics-service    payments   0          1               1               0
+analytics-service    payments   1          1               1               0
+analytics-service    payments   2          1               1               0
+analytics-service    inventory  0          1               1               0
+analytics-service    inventory  1          1               1               0
+analytics-service    inventory  2          1               1               0
+```
+
+> Si algún `LAG > 0`, significa que el consumidor está atrasado o caído. Por ejemplo, si `notification-service` muestra LAG=3 en `payments`, el consumidor no está procesando los eventos de pago.
+
+---
+
+#### Paso 7: Salida esperada en consola de la aplicación
+
+Al crear **ORD-001** (total = 100000), la consola de Spring Boot debe mostrar:
+
+```
+Payment Service: procesando pago para pedido ORD-001
+Payment Service: pago APPROVED para pedido ORD-001
+Inventory Service: procesando pedido ORD-001
+Inventory Service: RESERVED para pedido ORD-001
+Notification Service: pago APPROVED para pedido ORD-001
+Notification Service: inventario RESERVED para pedido ORD-001
+Analytics Service: pedido creado ORD-001 - total: 100000.0
+Analytics Service: pago APPROVED para pedido ORD-001
+Analytics Service: inventario RESERVED para pedido ORD-001
+```
+
+Al crear **ORD-002** (total = 260000):
+
+```
+Payment Service: procesando pago para pedido ORD-002
+Payment Service: pago REJECTED para pedido ORD-002
+Inventory Service: procesando pedido ORD-002
+Inventory Service: RESERVED para pedido ORD-002
+Notification Service: pago REJECTED para pedido ORD-002
+Notification Service: inventario RESERVED para pedido ORD-002
+Analytics Service: pedido creado ORD-002 - total: 260000.0
+Analytics Service: pago REJECTED para pedido ORD-002
+Analytics Service: inventario RESERVED para pedido ORD-002
+```
+
+Al crear **ORD-003** (total = 350000):
+
+```
+Payment Service: procesando pago para pedido ORD-003
+Payment Service: pago REJECTED para pedido ORD-003
+Inventory Service: procesando pedido ORD-003
+Inventory Service: REJECTED para pedido ORD-003
+Notification Service: pago REJECTED para pedido ORD-003
+Notification Service: inventario REJECTED para pedido ORD-003
+Analytics Service: pedido creado ORD-003 - total: 350000.0
+Analytics Service: pago REJECTED para pedido ORD-003
+Analytics Service: inventario REJECTED para pedido ORD-003
+```
+
+---
+
+#### Paso 8: Evidencia documental en Kafka UI
+
+| Sección en Kafka UI | Qué verificar |
+|---------------------|---------------|
+| **Topics** | Los 3 topics existen: `orders`, `payments`, `inventory` — cada uno con 3 particiones |
+| **Topics → orders → Messages** | 3 mensajes (uno por pedido) con clave = `orderId` y valor JSON con `status: "CREATED"` |
+| **Topics → payments → Messages** | 3 mensajes: ORD-001 → `APPROVED`, ORD-002 → `REJECTED`, ORD-003 → `REJECTED` |
+| **Topics → inventory → Messages** | 3 mensajes: ORD-001 → `RESERVED`, ORD-002 → `RESERVED`, ORD-003 → `REJECTED` |
+| **Consumers → payment-service** | Grupo activo, particiones 0,1,2 asignadas, lag = 0 |
+| **Consumers → inventory-service** | Grupo activo, particiones 0,1,2 asignadas, lag = 0 |
+| **Consumers → notification-service** | Grupo activo, consumiendo de `payments` e `inventory`, lag = 0 |
+| **Consumers → analytics-service** | Grupo activo, consumiendo de `orders`, `payments` e `inventory`, lag = 0 |
 
 </details>
 

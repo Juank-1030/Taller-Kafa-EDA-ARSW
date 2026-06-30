@@ -1,0 +1,85 @@
+@startuml
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam defaultFontSize 11
+skinparam ArrowColor #333333
+
+title "Flujo de Eventos - Sistema de Pedidos EDA"
+
+actor "Cliente" as cliente
+
+package "order-service" {
+  component "OrderController" as ctrl
+  component "OrderProducer" as prod_ord
+}
+
+package "Kafka" as kafka {
+  database "orders" as t_orders
+  database "payments" as t_payments
+  database "inventory" as t_inventory
+  database "invoices" as t_invoices
+  database "notifications" as t_notif
+  database "audit" as t_audit
+}
+
+package "payment-service" {
+  component "Consumer\n(group: payment-svc)" as cons_pay
+  component "Producer" as prod_pay
+}
+
+package "inventory-service" {
+  component "Consumer\n(group: inventory-svc)" as cons_inv
+  component "Producer" as prod_inv
+}
+
+package "invoice-service" {
+  component "Consumer\n(group: invoice-svc)" as cons_invce
+  component "Producer" as prod_invce
+}
+
+package "notification-service" as notif_pkg {
+  component "Consumer\n(group: notification-svc)" as cons_notif
+}
+
+package "analytics-service" as anl_pkg {
+  component "Consumer\n(group: analytics-svc)" as cons_anl
+}
+
+package "audit-service" as aud_pkg {
+  component "Consumer\n(group: audit-svc)" as cons_aud
+}
+
+' === FLUJO ===
+
+cliente --> ctrl : POST /orders
+ctrl --> prod_ord
+prod_ord --> t_orders : order-created
+
+t_orders --> cons_pay : order-created
+t_orders --> cons_inv : order-created
+t_orders --> cons_aud
+t_orders --> cons_anl
+
+cons_pay --> prod_pay
+prod_pay --> t_payments : payment-approved\npayment-rejected
+
+cons_inv --> prod_inv
+prod_inv --> t_inventory : inventory-reserved\ninventory-rejected
+
+t_payments --> cons_invce : payment-approved
+cons_invce --> prod_invce
+prod_invce --> t_invoices : invoice-generated
+
+t_payments --> cons_notif
+t_inventory --> cons_notif
+t_invoices --> cons_notif
+
+t_payments --> cons_anl
+t_inventory --> cons_anl
+
+t_invoices --> cons_aud
+t_notif --> cons_aud
+
+@enduml
