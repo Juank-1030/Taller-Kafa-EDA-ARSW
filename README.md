@@ -1053,17 +1053,19 @@ Revise una arquitectura que usa un topic `events`, mensajes sin clave, factor de
 
 | Problema | Atributo de calidad afectado | Mejora prioritaria |
 |----------|------------------------------|-------------------|
-| Topic único `events` | | |
-| Mensajes sin clave | | |
-| Factor de replicación 1 | | |
-| Sin DLT | | |
-| Sin monitoreo de lag | | |
+| Topic único `events` | Mantenibilidad, escalabilidad | Separar en topics por dominio: `orders`, `payments`, `inventory`, `invoices`, `notifications`, `audit` |
+| Mensajes sin clave | Consistencia, rendimiento | Usar `orderId` como clave para garantizar orden por entidad y distribución consistente entre particiones |
+| Factor de replicación 1 | Disponibilidad, durabilidad | Usar factor de replicación ≥ 2 en producción con mínimo 2 brokers para tolerar fallos |
+| Sin DLT | Confiabilidad, mantenibilidad | Configurar Dead Letter Topic por consumidor con reintentos controlados (`FixedBackOff`: 3 intentos, intervalo 2s) |
+| Sin monitoreo de lag | Observabilidad | Implementar monitoreo de lag por Consumer Group con alertas cuando el lag supere el umbral definido por SLA |
 
 **Resumen de mejoras:**
 
-1.
-2.
-3.
+1. Separar el topic único `events` en topics organizados por dominio, cada uno con retención, particiones y claves adaptadas a sus necesidades. Esto mejora la mantenibilidad, permite retenciones diferenciadas y facilita el monitoreo por servicio.
+
+2. Agregar `orderId` como clave de particionamiento en todos los mensajes transaccionales. Sin clave, Kafka no garantiza que eventos del mismo pedido lleguen a la misma partición, lo que puede generar inconsistencias entre servicios que procesan eventos relacionados del mismo flujo.
+
+3. Implementar estrategia de errores completa: reintentos controlados, Dead Letter Topics por servicio y monitoreo activo de lag con alertas. Sin esto, un evento que falla se pierde silenciosamente o bloquea indefinidamente al consumidor, afectando la disponibilidad y la trazabilidad del sistema.
 
 </details>
 
