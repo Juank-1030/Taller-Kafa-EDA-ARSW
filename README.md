@@ -1086,14 +1086,14 @@ Clasifique los siguientes procesos como REST, Kafka o arquitectura híbrida: *co
 
 | Proceso | Tipo | Justificación |
 |---------|------|---------------|
-| Consultar catálogo | REST | |
-| Crear pedido | Híbrido | |
-| Validar pago | Kafka | |
-| Enviar correo | Kafka | |
-| Actualizar analítica | Kafka | |
-| Registrar auditoría | Kafka | |
-| Consultar estado del pedido | REST | |
-| Actualizar inventario | Kafka | |
+| Consultar catálogo | REST | El usuario necesita ver los productos de inmediato, no tiene sentido usar Kafka para una consulta de lectura. |
+| Crear pedido | Híbrido | Se responde al cliente con REST (confirmación inmediata) y se publica el evento en Kafka para que los demás servicios procesen en segundo plano. |
+| Validar pago | Kafka | El pago puede demorar, no es necesario bloquear al cliente. El resultado se publica como evento y los servicios reaccionan cuando está listo. |
+| Enviar correo | Kafka | Es un proceso secundario que no debe afectar el flujo principal. Si el servicio de correo falla, Kafka retiene el evento hasta que se recupere. |
+| Actualizar analítica | Kafka | No necesita inmediatez. Los indicadores se construyen consumiendo eventos históricos y se pueden reprocesar si es necesario. |
+| Registrar auditoría | Kafka | La auditoría no debe bloquear ningún flujo. Kafka guarda los eventos como log inmutable, ideal para trazabilidad. |
+| Consultar estado del pedido | REST | El cliente necesita saber el estado en ese momento. Se consulta directamente la base de datos del servicio. |
+| Actualizar inventario | Kafka | El inventario cambia como consecuencia de otros eventos (pedido creado, pago aprobado). Varios servicios pueden reaccionar al mismo evento. |
 
 </details>
 
@@ -1106,29 +1106,28 @@ Diseñe el flujo de eventos para el proceso de compra. Incluya eventos principal
 
 **Diagrama de flujo:**
 
-```
-[Cliente] → POST /orders → [order-service] → orders topic
-  → [payment-service] (group: payment-service) → payments topic
-  → [inventory-service] (group: inventory-service) → inventory topic
-  → [notification-service] (group: notification-service)
-  → [analytics-service] (group: analytics-service)
-  → [audit-service] (group: audit-service)
-```
+![actividad_9-2.png](diagrams/actividad_9-2.png)
 
 **Tabla de diseño:**
 
 | Evento | Topic | Productor | Consumidores | Consumer Group | Clave |
 |--------|-------|-----------|--------------|----------------|-------|
-| | | | | | |
+| `order-created` | `orders` | order-service | payment-service, inventory-service, analytics-service, audit-service | `payment-service`, `inventory-service`, `analytics-service`, `audit-service` | `orderId` |
+| `payment-approved` | `payments` | payment-service | invoice-service, notification-service, analytics-service | `invoice-service`, `notification-service`, `analytics-service` | `orderId` |
+| `payment-rejected` | `payments` | payment-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
+| `inventory-reserved` | `inventory` | inventory-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
+| `inventory-rejected` | `inventory` | inventory-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
 
 **Preguntas:**
 
 1. **¿Por qué no conviene un único topic `events`?**
-   - 
+    - Si todos los eventos van al mismo topic, cada consumidor recibe cosas que no le interesan y tiene que filtrarlas. Además no se puede configurar retención diferente para cada tipo de evento, ni monitorear el lag por servicio. Un fallo de un consumidor afectaría a todos.
+
 2. **¿Por qué los consumidores deben tener grupos distintos?**
-   - 
+    - Porque dentro de un mismo grupo, cada partición solo la lee un consumidor. Si `payment-service` e `inventory-service` estuvieran en el mismo grupo, solo uno de los dos leería cada evento. Con grupos separados, los dos reciben el mismo evento de forma independiente.
+
 3. **¿Por qué `orderId` es una buena clave?**
-   - 
+    - Porque Kafka garantiza orden dentro de una partición. Con `orderId` como clave, todos los eventos del mismo pedido van a la misma partición, así el consumidor los procesa en el orden correcto.
 
 </details>
 
@@ -1153,15 +1152,17 @@ Realice un diagnóstico técnico breve: problemas identificados, atributos de ca
 
 | Problema | Atributo afectado | Riesgo | Cambio prioritario |
 |----------|-------------------|--------|-------------------|
-| Topic único `events` | | | |
-| 1 partición | | | |
-| Sin clave | | | |
-| Sin eventId / correlationId | | | |
-| Mismo Consumer Group | | | |
-| Sin DLT | | | |
-| Sin monitoreo de lag | | | |
+| Topic único `events` | Mantenibilidad, escalabilidad | Todos los servicios reciben eventos que no les corresponden, difícil de mantener y monitorear | Separar por dominio: `orders`, `payments`, `inventory`, etc. |
+| 1 partición | Escalabilidad | Solo un consumidor activo por grupo, cuello de botella bajo carga alta | Mínimo 3 particiones por topic |
+| Sin clave | Consistencia | Eventos del mismo pedido pueden procesarse en orden incorrecto | Usar `orderId` como clave |
+| Sin eventId / correlationId | Observabilidad | No se puede rastrear un evento entre servicios ni detectar duplicados | Agregar `eventId` y `correlationId` a cada evento |
+| Mismo Consumer Group | Corrección | Solo un servicio recibe cada evento, los demás nunca lo procesan | Un Consumer Group por servicio |
+| Sin DLT | Confiabilidad | Eventos fallidos se pierden sin posibilidad de recuperación | Configurar DLT con reintentos controlados |
+| Sin monitoreo de lag | Observabilidad | No se detectan consumidores caídos hasta que el problema ya afectó al negocio | Monitorear lag por grupo con alertas |
 
 **Propuesta de mejora integral:**
+
+Separar el topic `events` en topics por dominio, cada uno con 3 particiones y replicación 2. Usar `orderId` como clave. Un Consumer Group por servicio. Agregar `eventId` y `correlationId` a los eventos. Configurar DLT con 3 reintentos y 2 segundos de intervalo. Monitorear el lag con alertas automáticas. Retención de 7 días para transaccionales y 90 días para auditoría.
 
 </details>
 
