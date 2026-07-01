@@ -1,249 +1,251 @@
-# Taller Kafka - Arquitecturas Orientadas por Eventos (EDA) — ARSW
+# Kafka Workshop - Event-Driven Architectures (EDA) — ARSW
 
-**Escuela Colombiana de Ingeniería Julio Garavito**  
-Programa de Ingeniería de Sistemas — Arquitecturas de Software
+**Escuela Colombiana de Ingenieria Julio Garavito**  
+Systems Engineering Program — Software Architectures
 
-Autores; Juan Carlos Bohorquez Monroy, Carlos Andres Uribe Vargas
+Authors: Juan Carlos Bohorquez Monroy, Carlos Andres Uribe Vargas
 ---
 
-## Tabla de Contenido
+## Table of Contents
 
-- [Introducción](#introducción)
-- [Capítulo 1. Evolución hacia arquitecturas orientadas por eventos](#capítulo-1-evolución-hacia-arquitecturas-orientadas-por-eventos)
-- [Capítulo 2. Apache Kafka: fundamentos y arquitectura interna](#capítulo-2-apache-kafka-fundamentos-y-arquitectura-interna)
-- [Capítulo 3. Preparación del entorno de laboratorio](#capítulo-3-preparación-del-entorno-de-laboratorio)
-- [Capítulo 4. Productores y consumidores con Spring Boot](#capítulo-4-productores-y-consumidores-con-spring-boot)
-- [Capítulo 5. Caso de estudio: sistema de pedidos basado en eventos](#capítulo-5-caso-de-estudio-sistema-de-pedidos-basado-en-eventos)
-- [Capítulo 6. Laboratorio guiado extendido](#capítulo-6-laboratorio-guiado-extendido)
-- [Capítulo 7. Manejo de errores, reintentos y Dead Letter Topics](#capítulo-7-manejo-de-errores-reintentos-y-dead-letter-topics)
-- [Capítulo 8. Buenas prácticas de diseño con Kafka](#capítulo-8-buenas-prácticas-de-diseño-con-kafka)
-- [Capítulo 9. Actividades de consolidación](#capítulo-9-actividades-de-consolidación)
-- [Capítulo 10. Reto final, entregables y rúbrica](#capítulo-10-reto-final-entregables-y-rúbrica)
-
----
-
-## Introducción
-
-Las arquitecturas modernas requieren mecanismos de comunicación que permitan desacoplar servicios, procesar grandes volúmenes de eventos y responder de forma resiliente ante fallos parciales. Apache Kafka es una plataforma de *event streaming* que permite publicar, almacenar y consumir eventos de manera distribuida. Esta guía introduce los fundamentos arquitectónicos, técnicos y prácticos necesarios para comprender cuándo y cómo utilizar Kafka en sistemas basados en eventos.
-
-**Objetivo general:** Comprender los principios de las arquitecturas orientadas por eventos y aplicar Apache Kafka en un laboratorio práctico con Docker, Kafka UI y Spring Boot.
-
-**Herramientas:** Docker, Docker Compose, Kafka UI, Java 21, Maven y Spring Boot.
+- [Introduction](#introduction)
+- [Chapter 1. Evolution towards event-driven architectures](#chapter-1-evolution-towards-event-driven-architectures)
+- [Chapter 2. Apache Kafka: fundamentals and internal architecture](#chapter-2-apache-kafka-fundamentals-and-internal-architecture)
+- [Chapter 3. Lab environment setup](#chapter-3-lab-environment-setup)
+- [Chapter 4. Producers and consumers with Spring Boot](#chapter-4-producers-and-consumers-with-spring-boot)
+- [Chapter 5. Case study: event-based order system](#chapter-5-case-study-event-based-order-system)
+- [Chapter 6. Extended guided lab](#chapter-6-extended-guided-lab)
+- [Chapter 7. Error handling, retries and Dead Letter Topics](#chapter-7-error-handling-retries-and-dead-letter-topics)
+- [Chapter 8. Best practices for Kafka design](#chapter-8-best-practices-for-kafka-design)
+- [Chapter 9. Consolidation activities](#chapter-9-consolidation-activities)
+- [Chapter 10. Final challenge, deliverables and rubric](#chapter-10-final-challenge-deliverables-and-rubric)
 
 ---
 
-## Capítulo 1. Evolución hacia arquitecturas orientadas por eventos
+## Introduction
 
-### Contexto
+Modern architectures require communication mechanisms that allow decoupling services, processing large volumes of events, and responding resiliently to partial failures. Apache Kafka is an *event streaming* platform that enables publishing, storing, and consuming events in a distributed manner. This guide introduces the architectural, technical, and practical fundamentals needed to understand when and how to use Kafka in event-based systems.
 
-El desarrollo de software ha evolucionado desde arquitecturas monolíticas y cliente-servidor hacia estilos más desacoplados como SOA y microservicios. La comunicación síncrona (REST) introduce acoplamiento temporal y riesgos de fallo en cadena. En contraste, las arquitecturas orientadas por eventos (EDA) utilizan un broker como intermediario, donde los productores publican eventos y los consumidores reaccionan de forma asíncrona. Un **evento** representa un hecho relevante del dominio (ej. `order-created`), y los elementos clave son: **productor**, **consumidor**, **broker** y **topic**. A diferencia de las colas tradicionales, en *event streaming* los eventos persisten durante un periodo definido, permitiendo múltiples consumidores, reprocesamiento y auditoría.
+**General objective:** Understand the principles of event-driven architectures and apply Apache Kafka in a hands-on lab with Docker, Kafka UI, and Spring Boot.
 
-### Actividad 1. Análisis de comunicación
+**Tools:** Docker, Docker Compose, Kafka UI, Java 21, Maven, and Spring Boot.
 
-Clasifique qué procesos deberían ser síncronos, asíncronos o híbridos para una tienda en línea: *consultar productos, crear pedido, validar pago, enviar notificación, actualizar analítica y registrar auditoría*. Justifique brevemente su decisión.
+---
+
+## Chapter 1. Evolution towards event-driven architectures
+
+### Context
+
+Software development has evolved from monolithic and client-server architectures to more decoupled styles such as SOA and microservices. Synchronous communication (REST) introduces temporal coupling and chain failure risks. In contrast, Event-Driven Architectures (EDA) use a broker as an intermediary, where producers publish events and consumers react asynchronously. An **event** represents a relevant domain fact (e.g., `order-created`), and the key elements are: **producer**, **consumer**, **broker**, and **topic**. Unlike traditional queues, in *event streaming* events persist for a defined period, allowing multiple consumers, reprocessing, and auditing.
+
+### Activity 1. Communication analysis
+
+Classify which processes should be synchronous, asynchronous, or hybrid for an online store: *browse products, create order, validate payment, send notification, update analytics, and register audit*. Briefly justify your decision.
 
 <details>
-<summary><b>Desarrollo de la Actividad 1</b></summary>
+<summary><b>Activity 1 Development</b></summary>
 
-| Proceso | Tipo | Arquitectura | Justificación principal |
-|---------|------|-------------|----------------------|
-| Consultar productos | **Síncrono** | REST / API Gateway + Caché | El usuario necesita ver el catálogo en tiempo real. Es una consulta de lectura pura donde la inmediatez importa. |
-| Crear pedido | **Híbrido** | REST + Event Broker | El cliente recibe confirmación inmediata vía REST, pero los procesos posteriores (pago, inventario) se disparan como eventos asíncronos. |
-| Validar pago | **Asíncrono** | Event Broker (Kafka) | No es necesario bloquear al cliente. El pago se procesa en segundo plano y se notifica el resultado mediante eventos. |
-| Enviar notificación | **Asíncrono** | Event Broker (Kafka) | Enviar un correo o SMS no debe retrasar la respuesta al cliente. Es un efecto secundario que puede ocurrir en cualquier momento. |
-| Actualizar analítica | **Asíncrono** | Event Broker (Kafka) | Los indicadores de negocio se construyen con datos históricos; no requieren respuesta inmediata y se benefician del reprocesamiento. |
-| Registrar auditoría | **Asíncrono** | Event Broker (Kafka) | La trazabilidad debe registrarse sin bloquear el flujo principal. Kafka además conserva el evento original para auditorías forenses. |
-
----
-
-#### Análisis por proceso — puntos de vista y arquitecturas involucradas
-
-##### 1. Consultar productos — **Síncrono (REST)**
-
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | Espera ver productos al instante. Una respuesta lenta degrada la experiencia de compra. |
-| **Arquitectura** | Una API REST con caché (Redis / CDN) ofrece la mejor latencia. Kafka no está diseñado para consultas puntuales ni devolución de respuestas inmediatas. |
-| **Negocio** | Si el usuario no ve los productos, no compra. La disponibilidad y velocidad del catálogo impactan directamente las ventas. |
-| **Alternativa** | Podría usarse GraphQL o gRPC si se necesita flexibilidad en las consultas, pero sigue siendo síncrono. |
-
+| Process | Type | Architecture | Main justification |
+|---------|------|-------------|-------------------|
+| Browse products | **Synchronous** | REST / API Gateway + Cache | The user needs to see the catalog in real time. It is a pure read query where immediacy matters. |
+| Create order | **Hybrid** | REST + Event Broker | The client receives immediate confirmation via REST, but subsequent processes (payment, inventory) are triggered as asynchronous events. |
+| Validate payment | **Asynchronous** | Event Broker (Kafka) | There is no need to block the client. Payment is processed in the background and the result is notified via events. |
+| Send notification | **Asynchronous** | Event Broker (Kafka) | Sending an email or SMS should not delay the response to the client. It is a side effect that can occur at any time. |
+| Update analytics | **Asynchronous** | Event Broker (Kafka) | Business indicators are built with historical data; they do not require immediate response and benefit from reprocessing. |
+| Register audit | **Asynchronous** | Event Broker (Kafka) | Traceability must be recorded without blocking the main flow. Kafka also preserves the original event for forensic audits. |
 
 ---
 
-##### 2. Crear pedido — **Híbrido (REST + Event Broker)**
+#### Analysis by process — perspectives and involved architectures
 
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | Necesita saber que su pedido fue recibido (confirmación inmediata). No necesita esperar a que se valide el pago ni se reserve el inventario. |
-| **Arquitectura** | REST recibe el pedido y responde 201 Created. Simultáneamente se publica un evento `order-created` en Kafka para que los servicios downstream procesen el resto. |
-| **Negocio** | El pedido queda en estado `CREATED`. Si el pago falla después, se cancela y se notifica al cliente. Esto es **consistencia eventual**, aceptable para este dominio. |
-| **Riesgo** | El cliente cree que su pedido está confirmado, pero podría ser cancelado si el pago se rechaza. Se mitiga con comunicación clara (ej. "Pedido recibido, pendiente de confirmación"). |
+##### 1. Browse products — **Synchronous (REST)**
 
-**Arquitectura recomendada:** REST (order-service) → Kafka (topic `orders`) → Consumer Groups (`payment-service`, `inventory-service`)
+| Perspective | Argument |
+|-------------|----------|
+| **User** | Expects to see products instantly. A slow response degrades the shopping experience. |
+| **Architecture** | A REST API with cache (Redis / CDN) offers the best latency. Kafka is not designed for point queries or returning immediate responses. |
+| **Business** | If the user does not see the products, they do not buy. Catalog availability and speed directly impact sales. |
+| **Alternative** | GraphQL or gRPC could be used if query flexibility is needed, but it is still synchronous. |
+
+
+---
+
+##### 2. Create order — **Hybrid (REST + Event Broker)**
+
+| Perspective | Argument |
+|-------------|----------|
+| **User** | Needs to know their order was received (immediate confirmation). Does not need to wait for payment validation or inventory reservation. |
+| **Architecture** | REST receives the order and responds 201 Created. Simultaneously, an `order-created` event is published to Kafka for downstream services to process the rest. |
+| **Business** | The order remains in `CREATED` state. If payment fails later, it is cancelled and the client is notified. This is **eventual consistency**, acceptable for this domain. |
+| **Risk** | The client believes their order is confirmed, but it could be cancelled if payment is rejected. Mitigated with clear communication (e.g., "Order received, pending confirmation"). |
+
+**Recommended architecture:** REST (order-service) → Kafka (topic `orders`) → Consumer Groups (`payment-service`, `inventory-service`)
 
 ```
-Cliente ─POST /orders─→ Order Service ──→ Kafka (orders topic)
+Client ─POST /orders─→ Order Service ──→ Kafka (orders topic)
                           ↓ 201 Created        ↓
-                      Respuesta al      Payment Service (async)
-                      cliente           Inventory Service (async)
+                      Response to       Payment Service (async)
+                      client            Inventory Service (async)
 ```
 
 ---
 
-##### 3. Validar pago — **Asíncrono (Kafka)**
+##### 3. Validate payment — **Asynchronous (Kafka)**
 
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | No necesita esperar la validación bancaria en línea. Puede recibir una notificación después. |
-| **Arquitectura** | El `payment-service` consume el evento `order-created` desde Kafka, procesa el pago y publica `payment-approved` o `payment-rejected`. Esto desacopla el pago del resto del sistema. |
-| **Negocio** | La validación puede tomar segundos o minutos (ej. autenticación 3D Secure). Bloquear al cliente es inaceptable. |
-| **Punto de vista crítico** | Podría argumentarse que validar el pago *antes* de confirmar el pedido evita ventas fallidas. Sin embargo, en la práctica se logra con un *hold* (pre-autorización) síncrono rápido y el resto asíncrono, manteniendo el modelo híbrido. |
+| Perspective | Argument |
+|-------------|----------|
+| **User** | Does not need to wait for online bank validation. Can receive a notification later. |
+| **Architecture** | The `payment-service` consumes the `order-created` event from Kafka, processes the payment, and publishes `payment-approved` or `payment-rejected`. This decouples payment from the rest of the system. |
+| **Business** | Validation can take seconds or minutes (e.g., 3D Secure authentication). Blocking the client is unacceptable. |
+| **Critical viewpoint** | One could argue that validating payment *before* confirming the order prevents failed sales. However, in practice this is achieved with a fast synchronous *hold* (pre-authorization) and the rest asynchronous, maintaining the hybrid model. |
 
-**Arquitectura recomendada:** Kafka (topic `orders`) → payment-service (Consumer Group `payment-service`) → Kafka (topic `payments`)
-
----
-
-##### 4. Enviar notificación — **Asíncrono (Kafka)**
-
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | La notificación puede llegar segundos o minutos después sin afectar su experiencia. |
-| **Arquitectura** | El `notification-service` consume eventos de múltiples topics (`payments`, `inventory`, `invoices`) y envía correos/SMS sin acoplar al emisor original. |
-| **Negocio** | Si el servicio de notificaciones falla, no debe impedir que el pedido se procese. Con Kafka, el evento persiste y se reprocesa cuando el servicio se recupere. |
-| **Alternativa** | Para notificaciones críticas (ej. alerta de fraude) podría necesitarse sincronía, pero para una tienda en línea es un caso menor. |
-
-**Arquitectura recomendada:** Kafka (varios topics) → notification-service → Proveedor de emails/SMS
+**Recommended architecture:** Kafka (topic `orders`) → payment-service (Consumer Group `payment-service`) → Kafka (topic `payments`)
 
 ---
 
-##### 5. Actualizar analítica — **Asíncrono (Kafka)**
+##### 4. Send notification — **Asynchronous (Kafka)**
 
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | Es transparente para el usuario. No hay expectativa de inmediatez. |
-| **Arquitectura** | El `analytics-service` consume eventos de forma independiente para construir dashboards, KPIs y reportes. Kafka permite reprocesar eventos históricos si se necesita recalcular métricas. |
-| **Negocio** | La analítica se beneficia del *event sourcing*: cada evento es un hecho inmutable que alimenta indicadores sin afectar el flujo transaccional. |
-| **Punto de vista crítico** | Si la analítica necesita datos en tiempo real (ej. detectar fraude durante la compra), podría requerirse un flujo híbrido con procesamiento rápido (Kafka Streams), pero sin cambiar a síncrono. |
+| Perspective | Argument |
+|-------------|----------|
+| **User** | The notification can arrive seconds or minutes later without affecting their experience. |
+| **Architecture** | The `notification-service` consumes events from multiple topics (`payments`, `inventory`, `invoices`) and sends emails/SMS without coupling to the original sender. |
+| **Business** | If the notification service fails, it should not prevent the order from being processed. With Kafka, the event persists and is reprocessed when the service recovers. |
+| **Alternative** | For critical notifications (e.g., fraud alert) synchronicity might be needed, but for an online store it is a minor case. |
 
-**Arquitectura recomendada:** Kafka (todos los topics relevantes) → analytics-service → Base de datos analítica / Dashboard
-
----
-
-##### 6. Registrar auditoría — **Asíncrono (Kafka)**
-
-| Perspectiva | Argumento |
-|-------------|-----------|
-| **Usuario** | Es transparente. El usuario nunca espera a que se registre una auditoría. |
-| **Arquitectura** | El `audit-service` consume eventos de todos los servicios. Kafka retiene los eventos (retención configurable), funcionando como un log de auditoría distribuido por sí mismo. |
-| **Negocio** | La auditoría requiere trazabilidad completa e inmutable. Kafka garantiza orden por partición y persistencia, ideal para cumplimiento normativo (SOX, PCI-DSS). |
-| **Punto de vista crítico** | Si una regulación exige que el registro de auditoría se haya completado antes de confirmar la transacción, entonces se necesitaría un enfoque híbrido con confirmación del audit-service antes de responder al cliente. |
-
-**Arquitectura recomendada:** Kafka (topic `audit`) → audit-service → Almacenamiento de auditoría / Índice de búsqueda (Elasticsearch)
+**Recommended architecture:** Kafka (various topics) → notification-service → Email/SMS provider
 
 ---
 
-#### Resumen arquitectónico general
+##### 5. Update analytics — **Asynchronous (Kafka)**
 
-| Proceso | Estilo de comunicación | Broker de eventos | REST API | Caché | Consistencia |
-|---------|----------------------|-------------------|----------|-------|-------------|
-| Consultar productos | Síncrono | NO | SI | SI | Fuerte |
-| Crear pedido | Híbrido | SI | SI | NO | Eventual |
-| Validar pago | Asíncrono | SI | NO | NO | Eventual |
-| Enviar notificación | Asíncrono | SI | NO | NO | Eventual |
-| Actualizar analítica | Asíncrono | SI | NO | NO | Eventual |
-| Registrar auditoría | Asíncrono | SI | NO | NO | Eventual |
+| Perspective | Argument |
+|-------------|----------|
+| **User** | It is transparent to the user. No expectation of immediacy. |
+| **Architecture** | The `analytics-service` consumes events independently to build dashboards, KPIs, and reports. Kafka allows reprocessing historical events if metrics need to be recalculated. |
+| **Business** | Analytics benefits from *event sourcing*: each event is an immutable fact that feeds indicators without affecting the transactional flow. |
+| **Critical viewpoint** | If analytics needs real-time data (e.g., detecting fraud during purchase), a hybrid flow with fast processing (Kafka Streams) may be required, but without switching to synchronous. |
 
-> **Conclusión:** La tienda en línea requiere una **arquitectura híbrida** donde REST maneja las consultas y la confirmación inmediata, mientras que Kafka orquesta los procesos de negocio asíncronos. Esto maximiza desacoplamiento, escalabilidad y tolerancia a fallos, alineándose con los principios de EDA descritos en el capítulo 1.
+**Recommended architecture:** Kafka (all relevant topics) → analytics-service → Analytics database / Dashboard
+| **Business** | Analytics benefits from *event sourcing*: each event is an immutable fact that feeds indicators without affecting the transactional flow. |
+| **Critical viewpoint** | If analytics needs real-time data (e.g., detecting fraud during purchase), a hybrid flow with fast processing (Kafka Streams) may be required, but without switching to synchronous. |
+
+**Recommended architecture:** Kafka (all relevant topics) → analytics-service → Analytics database / Dashboard
+
+---
+
+##### 6. Register audit — **Asynchronous (Kafka)**
+
+| Perspective | Argument |
+|-------------|----------|
+| **User** | It is transparent. The user never waits for audit logging. |
+| **Architecture** | The `audit-service` consumes events from all services. Kafka retains events (configurable retention), functioning as a distributed audit log by itself. |
+| **Business** | Auditing requires complete and immutable traceability. Kafka guarantees order per partition and persistence, ideal for regulatory compliance (SOX, PCI-DSS). |
+| **Critical viewpoint** | If a regulation requires that the audit record be completed before confirming the transaction, a hybrid approach with confirmation from the audit-service before responding to the client would be needed. |
+
+**Recommended architecture:** Kafka (topic `audit`) → audit-service → Audit storage / Search index (Elasticsearch)
+
+---
+
+#### General architectural summary
+
+| Process | Communication style | Event broker | REST API | Cache | Consistency |
+|---------|-------------------|--------------|----------|-------|-------------|
+| Browse products | Synchronous | NO | YES | YES | Strong |
+| Create order | Hybrid | YES | YES | NO | Eventual |
+| Validate payment | Asynchronous | YES | NO | NO | Eventual |
+| Send notification | Asynchronous | YES | NO | NO | Eventual |
+| Update analytics | Asynchronous | YES | NO | NO | Eventual |
+| Register audit | Asynchronous | YES | NO | NO | Eventual |
+
+> **Conclusion:** The online store requires a **hybrid architecture** where REST handles queries and immediate confirmation, while Kafka orchestrates asynchronous business processes. This maximizes decoupling, scalability, and fault tolerance, aligning with the EDA principles described in Chapter 1.
 
 </details>
 
 ---
 
-## Capítulo 2. Apache Kafka: fundamentos y arquitectura interna
+## Chapter 2. Apache Kafka: fundamentals and internal architecture
 
-### Contexto
+### Context
 
-Apache Kafka es una plataforma distribuida de *event streaming* que funciona como un **log distribuido de eventos**. Sus componentes principales incluyen: **broker** (servidor Kafka), **cluster** (conjunto de brokers), **topic** (categoría lógica), **partición** (división física para paralelismo), **offset** (posición dentro de una partición), **producer**, **consumer**, **consumer group** (grupo que reparte particiones), **replica** (copia de seguridad), **leader/follower**, **ISR** (réplicas sincronizadas) y **retención** (tiempo/tamaño de conservación). Kafka garantiza orden solo dentro de una misma partición. La **clave de particionamiento** permite enrutar eventos relacionados (ej. `orderId`) a la misma partición. Los **Consumer Groups** permiten escalar el consumo: dentro de un grupo, cada partición es procesada por un solo consumidor, y grupos distintos reciben todos los eventos de forma independiente. En producción se recomienda replicación > 1 para tolerancia a fallos.
+Apache Kafka is a distributed *event streaming* platform that functions as a **distributed event log**. Its main components include: **broker** (Kafka server), **cluster** (set of brokers), **topic** (logical category), **partition** (physical division for parallelism), **offset** (position within a partition), **producer**, **consumer**, **consumer group** (group that distributes partitions), **replica** (backup copy), **leader/follower**, **ISR** (in-sync replicas), and **retention** (time/size for conservation). Kafka guarantees order only within a single partition. The **partitioning key** routes related events (e.g., `orderId`) to the same partition. **Consumer Groups** allow scaling consumption: within a group, each partition is processed by a single consumer, and different groups receive all events independently. In production, replication > 1 is recommended for fault tolerance.
 
-### Actividad 2. Decisiones de configuración
+### Activity 2. Configuration decisions
 
-Analice una configuración con un topic `orders`, **una partición**, **factor de replicación 1**, **mensajes sin clave** y **retención de 24 horas**. Identifique riesgos y proponga mejoras para un ambiente productivo.
+Analyze a configuration with a topic `orders`, **one partition**, **replication factor 1**, **messages without keys**, and **24-hour retention**. Identify risks and propose improvements for a production environment.
 
 <details>
-<summary><b>Desarrollo de la Actividad 2</b></summary>
+<summary><b>Activity 2 Development</b></summary>
 
-#### Análisis de la configuración propuesta
+#### Analysis of the proposed configuration
 
-| Elemento | Configuración actual | Problema en producción |
-|----------|---------------------|----------------------|
-| Particiones | 1 | Sin paralelismo — un solo consumidor activo por grupo |
-| Factor de replicación | 1 | Sin tolerancia a fallos — pérdida total si el broker cae |
-| Clave | Sin clave (`null`) | Distribución aleatoria, sin orden por entidad |
-| Retención | 24 horas | Ventana de reprocesamiento y auditoría muy corta |
-
----
-
-#### Riesgos identificados
-
-##### 1. Partición única — Cuello de botella y escalabilidad horizontal nula
-
-| Perspectiva | Impacto |
-|-------------|---------|
-| **Rendimiento (throughput)** | Toda la escritura y lectura pasa por una sola partición. El límite es la capacidad de un solo broker. Si el volumen de pedidos crece, el topic `orders` se convierte en un cuello de botella. |
-| **Paralelismo de consumo** | Dentro de un Consumer Group, **una partición solo puede ser asignada a un consumidor**. Si hay 3 réplicas del `payment-service`, solo 1 estará activa consumiendo; las otras 2 estarán inactivas. |
-| **Recuperación** | Si un consumidor falla, el rebalanceo reasigna la partición, pero el reemplazo hereda toda la carga acumulada sin posibilidad de dividir el trabajo. |
-| **Orden vs. escalabilidad** | Se sacrifica escalabilidad por un orden global que en realidad Kafka no necesita garantizar. |
-
-**Ejemplo concreto:** Una tienda en línea procesa 10,000 pedidos/hora. Con 1 partición, el límite de escritura es ~1-5 MB/s. Cualquier pico navideño satura el broker. Con 6 particiones se distribuye la carga 6×.
-
-##### 2. Factor de replicación 1 — Sin tolerancia a fallos (Single Point of Failure)
-
-| Perspectiva | Impacto |
-|-------------|---------|
-| **Disponibilidad** | Si el broker se cae (fallo de hardware, reinicio, OOM), el topic `orders` deja de existir. Todos los eventos no consumidos se pierden permanentemente. |
-| **Durabilidad** | No hay copia de seguridad. Un `kill -9` o un fallo de disco implica pérdida de datos. |
-| **Mantenimiento** | No se puede reiniciar el broker de forma transparente. Cualquier actualización requiere ventana de mantenimiento con downtime. |
-| **Recuperación ante desastre** | Si el datacenter falla, no hay réplica en otro rack o zona de disponibilidad. |
-
-
-
-##### 3. Mensajes sin clave — Imposibilidad de orden por entidad y compactación
-
-| Perspectiva | Impacto |
-|-------------|---------|
-| **Orden de eventos por pedido** | Si en el futuro se agregan más particiones, los eventos de un mismo `orderId` se distribuirán aleatoriamente entre particiones. No se podrá garantizar que `payment-approved` se procese después de `order-created` para el mismo pedido. |
-| **Idempotencia del productor** | Kafka usa la clave para determinar la partición y para la deduplicación del productor idempotente. Sin clave, la idempotencia es más limitada. |
-| **Log compaction** | La compactación de logs (retención basada en clave) no funciona sin clave. No se puede mantener el último estado de cada entidad. |
-| **Distribución predecible** | Sin clave, el particionamiento sigue un round-robin o sticky partitioner, imposible de predecir o depurar. |
-
-**Ejemplo concreto:** El pedido ORD-1001 pasa por varias etapas: `order-created` → `payment-approved` → `inventory-reserved`. Si algún sistema externo pregunta "¿cuál es el estado actual de ORD-1001?", sin clave no hay una manera eficiente de rastrear todos sus eventos.
-
-##### 4. Retención de 24 horas — Reprocesamiento y auditoría limitados
-
-| Perspectiva | Impacto |
-|-------------|---------|
-| **Reprocesamiento** | Si un consumidor falla por más de 24 horas (ej. fin de semana), al recuperarse ya no encontrará los eventos en Kafka. Se pierden para siempre. |
-| **Auditoría y forense** | Una investigación posterior (ej. un chargeback de un pedido de hace 3 días) no podrá consultar los eventos originales. |
-| **Analítica retrospectiva** | Si se necesita recalcular métricas del mes anterior, no es posible porque los eventos ya expiraron. |
-| **Recuperación de errores** | Si un bug en el consumidor hace que procese incorrectamente eventos, y el bug se descubre después de 24 horas, no se puede re-procesar desde el origen. |
-
-**Ejemplo concreto:** El `notification-service` tiene un bug que impide enviar notificaciones el 30 de junio. El bug se descubre el 2 de julio. Los eventos del 30 de junio ya expiraron (retención 24h). Todos esos pedidos se quedaron sin notificación y no hay forma de recuperarlos.
+| Element | Current configuration | Production problem |
+|---------|----------------------|-------------------|
+| Partitions | 1 | No parallelism — only one active consumer per group |
+| Replication factor | 1 | No fault tolerance — total loss if the broker fails |
+| Key | No key (`null`) | Random distribution, no entity ordering |
+| Retention | 24 hours | Very short reprocessing and auditing window |
 
 ---
 
-#### Mejoras propuestas para un ambiente productivo
+#### Identified risks
 
-| Problema | Mejora | Configuración recomendada | Atributo de calidad |
-|----------|--------|--------------------------|---------------------|
-| **1 partición** | Aumentar particiones para paralelismo y escalabilidad | `partitions: 6` (o `partitions: 3 × número de consumidores esperados`) | Escalabilidad, Rendimiento |
-| **Replicación 1** | Aumentar factor de replicación con múltiples brokers | `replication-factor: 3`, mínimo 3 brokers en el cluster | Disponibilidad, Durabilidad |
-| **Sin clave** | Usar `orderId` como clave de particionamiento | `key = orderId` en cada mensaje | Orden por entidad, Idempotencia |
-| **Retención 24h** | Aumentar retención según necesidad de reprocesamiento y auditoría | `retention.ms: 604800000` (7 días) o retención infinita para auditoría | Mantenibilidad, Auditoría |
+##### 1. Single partition — Bottleneck and zero horizontal scalability
 
-##### Configuración productiva recomendada
+| Perspective | Impact |
+|-------------|--------|
+| **Throughput** | All writes and reads go through a single partition. The limit is a single broker's capacity. If order volume grows, the `orders` topic becomes a bottleneck. |
+| **Consumer parallelism** | Within a Consumer Group, **a partition can only be assigned to one consumer**. If there are 3 replicas of `payment-service`, only 1 will be actively consuming; the other 2 will be idle. |
+| **Recovery** | If a consumer fails, rebalancing reassigns the partition, but the replacement inherits all accumulated load without the ability to divide the work. |
+| **Order vs. scalability** | Scalability is sacrificed for a global order that Kafka does not actually need to guarantee. |
+
+**Concrete example:** An online store processes 10,000 orders/hour. With 1 partition, the write limit is ~1-5 MB/s. Any holiday spike saturates the broker. With 6 partitions, load is distributed 6×.
+
+##### 2. Replication factor 1 — No fault tolerance (Single Point of Failure)
+
+| Perspective | Impact |
+|-------------|--------|
+| **Availability** | If the broker goes down (hardware failure, restart, OOM), the `orders` topic ceases to exist. All unconsumed events are permanently lost. |
+| **Durability** | No backup copy. A `kill -9` or disk failure means data loss. |
+| **Maintenance** | The broker cannot be restarted transparently. Any update requires a maintenance window with downtime. |
+| **Disaster recovery** | If the datacenter fails, there is no replica in another rack or availability zone. |
+
+##### 3. Messages without keys — No entity ordering or compaction
+
+| Perspective | Impact |
+|-------------|--------|
+| **Event order per order** | If more partitions are added in the future, events from the same `orderId` will be randomly distributed across partitions. It cannot be guaranteed that `payment-approved` is processed after `order-created` for the same order. |
+| **Producer idempotence** | Kafka uses the key to determine the partition and for idempotent producer deduplication. Without a key, idempotence is more limited. |
+| **Log compaction** | Log compaction (key-based retention) does not work without a key. The latest state of each entity cannot be maintained. |
+| **Predictable distribution** | Without a key, partitioning follows a round-robin or sticky partitioner, impossible to predict or debug. |
+
+**Concrete example:** Order ORD-1001 goes through several stages: `order-created` → `payment-approved` → `inventory-reserved`. If some external system asks "what is the current state of ORD-1001?", without a key there is no efficient way to trace all its events.
+
+##### 4. 24-hour retention — Limited reprocessing and auditing
+
+| Perspective | Impact |
+|-------------|--------|
+| **Reprocessing** | If a consumer fails for more than 24 hours (e.g., weekend), when it recovers it will no longer find the events in Kafka. They are lost forever. |
+| **Audit and forensics** | A later investigation (e.g., a chargeback from 3 days ago) cannot consult the original events. |
+| **Retrospective analytics** | If metrics from the previous month need to be recalculated, it is not possible because the events have already expired. |
+| **Error recovery** | If a bug in the consumer causes incorrect event processing, and the bug is discovered after 24 hours, it cannot be re-processed from the source. |
+
+**Concrete example:** The `notification-service` has a bug that prevents sending notifications on June 30. The bug is discovered on July 2. The June 30 events have already expired (24h retention). All those orders have no notification and there is no way to recover them.
+
+---
+
+#### Proposed improvements for a production environment
+
+| Problem | Improvement | Recommended configuration | Quality attribute |
+|---------|-------------|--------------------------|-------------------|
+| **1 partition** | Increase partitions for parallelism and scalability | `partitions: 6` (or `partitions: 3 × expected number of consumers`) | Scalability, Throughput |
+| **Replication 1** | Increase replication factor with multiple brokers | `replication-factor: 3`, minimum 3 brokers in the cluster | Availability, Durability |
+| **No key** | Use `orderId` as partitioning key | `key = orderId` on each message | Entity ordering, Idempotence |
+| **24h retention** | Increase retention based on reprocessing and auditing needs | `retention.ms: 604800000` (7 days) or infinite retention for auditing | Maintainability, Auditability |
+
+##### Recommended production configuration
 
 ```yaml
-# docker-compose.yml — Configuración básica para producción mínima
+# docker-compose.yml — Basic production configuration
 services:
   kafka-1:
     image: apache/kafka:3.7.0
@@ -266,7 +268,7 @@ services:
 ```
 
 ```bash
-# Creación del topic orders para producción
+# Create orders topic for production
 kafka-topics.sh --create \
   --topic orders \
   --bootstrap-server localhost:9092 \
@@ -276,75 +278,75 @@ kafka-topics.sh --create \
   --config min.insync.replicas=2
 ```
 
-##### Análisis de impacto de las mejoras
+##### Impact analysis of improvements
 
-| Atributo de calidad | Antes | Después |
-|---------------------|-------|---------|
-| **Escalabilidad** | Fallo. 1 partición = 1 consumidor activo | Check. 6 particiones = hasta 6 consumidores en paralelo |
-| **Disponibilidad** | Fallo. Replicación 1 = caída del broker = pérdida total | Check. Replicación 3 = tolerancia a 2 brokers caídos |
-| **Durabilidad** | Fallo. Sin copia = pérdida de datos en fallo. | Check. ISR mínimo 2 = datos seguros aunque 1 broker falle |
-| **Orden por entidad** | Fallo. Sin clave = distribución aleatoria | Check. `orderId` como clave = orden garantizado por pedido |
-| **Reprocesamiento** | Fallo. 24h = ventana mínima | Check. 7 días = recuperación ante errores prolongados |
-| **Auditoría** | Fallo. Eventos expiran antes de detectar problemas | Check. Retención extendida permite trazabilidad forense |
+| Quality attribute | Before | After |
+|-------------------|--------|-------|
+| **Scalability** | Fail. 1 partition = 1 active consumer | OK. 6 partitions = up to 6 consumers in parallel |
+| **Availability** | Fail. Replication 1 = broker crash = total loss | OK. Replication 3 = tolerance to 2 failed brokers |
+| **Durability** | Fail. No copy = data loss on failure | OK. ISR minimum 2 = safe data even if 1 broker fails |
+| **Entity ordering** | Fail. No key = random distribution | OK. `orderId` as key = guaranteed order per order |
+| **Reprocessing** | Fail. 24h = minimal window | OK. 7 days = recovery from extended errors |
+| **Auditability** | Fail. Events expire before problems are detected | OK. Extended retention enables forensic traceability |
 
-> **Conclusión:** La configuración original es aceptable únicamente para un laboratorio local o entorno de desarrollo. Para producción se requieren **múltiples particiones** (escalabilidad), **factor de replicación ≥ 2** (disponibilidad), **claves de particionamiento** (orden y consistencia) y **retención extendida** (reprocesamiento y auditoría).
+> **Conclusion:** The original configuration is acceptable only for a local lab or development environment. Production requires **multiple partitions** (scalability), **replication factor ≥ 2** (availability), **partitioning keys** (order and consistency), and **extended retention** (reprocessing and auditing).
 
 </details>
 
 ---
 
-## Capítulo 3. Preparación del entorno de laboratorio
+## Chapter 3. Lab environment setup
 
-### Contexto
+### Context
 
-El laboratorio utiliza **Docker** para ejecutar Kafka en modo **KRaft** (sin ZooKeeper) y **Kafka UI** como herramienta visual. Se proporciona un archivo `docker-compose.yml` con un broker Kafka y la interfaz web en el puerto `8080`. El broker queda expuesto en `localhost:9092`. Se incluyen comandos básicos para crear topics, describirlos, publicar y consumir eventos desde la terminal usando los scripts de Kafka.
+The lab uses **Docker** to run Kafka in **KRaft** mode (without ZooKeeper) and **Kafka UI** as a visual tool. A `docker-compose.yml` file is provided with one Kafka broker and the web interface on port `8080`. The broker is exposed on `localhost:9092`. Basic commands are included for creating topics, describing them, publishing, and consuming events from the terminal using Kafka's built-in scripts.
 
-### Actividad 3. Actividad práctica
+### Activity 3. Hands-on activity
 
-Cree los topics `orders`, `payments` e `inventory`. Publique al menos cinco eventos JSON y verifique en Kafka UI su topic, partición, offset, clave y contenido.
+Create the topics `orders`, `payments`, and `inventory`. Publish at least five JSON events and verify in Kafka UI their topic, partition, offset, key, and content.
 
 <details>
-<summary><b>Desarrollo de la Actividad 3</b></summary>
+<summary><b>Activity 3 Development</b></summary>
 
-**Entorno levantado:**
+**Environment up:**
 
-Se creó `docker-compose.yml` con dos servicios: `kafka` (Apache Kafka 3.7.0 en modo KRaft, sin ZooKeeper, puerto `9092`) y `kafka-ui` (interfaz visual Provectus, puerto `8080`), conectados a través de la red interna de Docker bajo el cluster `arsw-local`.
+A `docker-compose.yml` was created with two services: `kafka` (Apache Kafka 3.7.0 in KRaft mode, without ZooKeeper, port `9092`) and `kafka-ui` (Provectus visual interface, port `8080`), connected through Docker's internal network under the `arsw-local` cluster.
 
 ```bash
 docker compose up -d
 docker ps
 ```
 
-**Incidente y corrección:**
+**Incident and fix:**
 
-El `advertised.listeners` inicial apuntaba a `localhost:9092`, lo cual funciona para clientes dentro del propio contenedor de Kafka, pero impide que **otros contenedores** (como Kafka UI) lo resuelvan, ya que cada contenedor tiene su propio `localhost`. Esto se evidenció con Kafka UI mostrando 0 brokers y la pantalla de Topics cargando indefinidamente (error 500), con logs mostrando `Connection to node 1 (localhost/127.0.0.1:9092) could not be established`.
+The initial `advertised.listeners` pointed to `localhost:9092`, which works for clients inside the Kafka container itself, but prevents **other containers** (like Kafka UI) from resolving it, since each container has its own `localhost`. This was evidenced by Kafka UI showing 0 brokers and the Topics screen loading indefinitely (error 500), with logs showing `Connection to node 1 (localhost/127.0.0.1:9092) could not be established`.
 
-**Solución:** cambiar el advertised listener para usar el nombre del servicio dentro de la red de Docker:
+**Solution:** Change the advertised listener to use the service name within Docker's network:
 
 ```yaml
 KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
 ```
 
-Esto no afecta la conexión desde la máquina host (por ejemplo, una futura app Spring Boot corriendo en `localhost`), porque el puerto sigue mapeado a `localhost:9092` hacia afuera del contenedor.
+This does not affect connections from the host machine (e.g., a future Spring Boot app running on `localhost`), because the port is still mapped to `localhost:9092` from outside the container.
 
-**Comandos utilizados:**
+**Commands used:**
 
 ```bash
 docker exec -it arsw-kafka bash
 
-# Crear topics
+# Create topics
 /opt/kafka/bin/kafka-topics.sh --create --topic orders --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
 /opt/kafka/bin/kafka-topics.sh --create --topic payments --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
 /opt/kafka/bin/kafka-topics.sh --create --topic inventory --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
 
-# Verificar
+# Verify
 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 
-# Publicar eventos
+# Publish events
 /opt/kafka/bin/kafka-console-producer.sh --topic orders --bootstrap-server localhost:9092
 ```
 
-**Eventos publicados (topic `orders`):**
+**Published events (topic `orders`):**
 
 ```json
 {"orderId":"ORD-1001","customerId":"CUS-01","total":120000,"status":"CREATED"}
@@ -354,24 +356,24 @@ docker exec -it arsw-kafka bash
 {"orderId":"ORD-1005","customerId":"CUS-04","total":310000,"status":"CREATED"}
 ```
 
-| # | Topic | Clave | Partición | Offset | Contenido |
-|---|-------|-------|-----------|--------|-----------|
-| 1 | orders | (vacía) | 0 | 0 | ORD-1001, CUS-01, 120000 |
-| 2 | orders | (vacía) | 0 | 1 | ORD-1002, CUS-02, 85000 |
-| 3 | orders | (vacía) | 0 | 2 | ORD-1003, CUS-03, 260000 |
-| 4 | orders | (vacía) | 0 | 3 | ORD-1004, CUS-01, 45000 |
-| 5 | orders | (vacía) | 0 | 4 | ORD-1005, CUS-04, 310000 |
+| # | Topic | Key | Partition | Offset | Content |
+|---|-------|-----|-----------|--------|---------|
+| 1 | orders | (empty) | 0 | 0 | ORD-1001, CUS-01, 120000 |
+| 2 | orders | (empty) | 0 | 1 | ORD-1002, CUS-02, 85000 |
+| 3 | orders | (empty) | 0 | 2 | ORD-1003, CUS-03, 260000 |
+| 4 | orders | (empty) | 0 | 3 | ORD-1004, CUS-01, 45000 |
+| 5 | orders | (empty) | 0 | 4 | ORD-1005, CUS-04, 310000 |
 
-**Hallazgo / análisis:**
+**Finding / analysis:**
 
-Los 5 eventos cayeron **todos en la partición 0**, a pesar de tener 3 particiones disponibles. Esto se explica porque los mensajes se publicaron **sin clave** (key vacía): sin clave, el cliente productor no garantiza una distribución uniforme inmediata; las versiones recientes del cliente usan una estrategia "sticky" que agrupa mensajes consecutivos en la misma partición por lotes antes de rotar, en lugar de repartir uno a uno entre particiones.
+All 5 events landed **in partition 0**, despite having 3 available partitions. This is because messages were published **without a key** (empty key): without a key, the producer client does not guarantee immediate uniform distribution; recent versions of the client use a "sticky" strategy that groups consecutive messages into the same partition in batches before rotating, rather than distributing one by one across partitions.
 
-Esto evidencia en la práctica el riesgo que se plantea en la **Actividad 2 (Decisiones de configuración)**: una configuración sin clave de particionamiento puede concentrar la carga en una sola partición, afectando el paralelismo y el balanceo entre consumidores de un mismo grupo.
+This demonstrates in practice the risk raised in **Activity 2 (Configuration decisions)**: a configuration without a partitioning key can concentrate load on a single partition, affecting parallelism and load balancing among consumers in the same group.
 
-**Topics creados (verificación en Kafka UI):**
+**Topics created (verification in Kafka UI):**
 
 | Topic | Partitions | Replication Factor | Number of messages |
-|-------|-----------|---------------------|---------------------|
+|-------|-----------|---------------------|-------------------|
 | inventory | 3 | 1 | 0 |
 | orders | 3 | 1 | 5 |
 | payments | 3 | 1 | 0 |
@@ -380,44 +382,44 @@ Esto evidencia en la práctica el riesgo que se plantea en la **Actividad 2 (Dec
 
 ---
 
-## Capítulo 4. Productores y consumidores con Spring Boot
+## Chapter 4. Producers and consumers with Spring Boot
 
-### Contexto
+### Context
 
-Se implementa una aplicación Spring Boot con productor y consumidor Kafka. La configuración se define en `application.yaml` con `bootstrap-servers: localhost:9093`, serializador JSON (`JsonSerializer`/`JsonDeserializer`) y `group-id: order-service`. Se define el evento de dominio `OrderCreatedEvent` con atributos `orderId`, `customerId`, `total`, `status` y `occurredAt`. El productor usa `KafkaTemplate` para publicar en el topic `orders` usando `orderId` como clave. El consumidor usa `@KafkaListener`. Un `@RestController` expone un endpoint `POST /orders` que recibe la solicitud HTTP y publica el evento.
+A Spring Boot application is implemented with a Kafka producer and consumer. The configuration is defined in `application.yaml` with `bootstrap-servers: localhost:9093`, JSON serializer (`JsonSerializer`/`JsonDeserializer`), and `group-id: order-service`. The domain event `OrderCreatedEvent` is defined with attributes `orderId`, `customerId`, `total`, `status`, and `occurredAt`. The producer uses `KafkaTemplate` to publish to the `orders` topic using `orderId` as the key. The consumer uses `@KafkaListener`. A `@RestController` exposes a `POST /orders` endpoint that receives the HTTP request and publishes the event.
 
-### Actividad 4. Trazabilidad del evento
+### Activity 4. Event traceability
 
-Documente el recorrido del evento desde la solicitud HTTP hasta el consumidor. Indique topic, clave, partición, consumidor, Consumer Group y evidencia en Kafka UI.
+Document the event's journey from HTTP request to consumer. Indicate topic, key, partition, consumer, Consumer Group, and evidence in Kafka UI.
 
 <details>
-<summary><b>Desarrollo de la Actividad 4</b></summary>
+<summary><b>Activity 4 Development</b></summary>
 
-#### Recorrido completo del evento
+#### Complete event journey
 
 ```
 ┌─────────┐   POST /orders    ┌────────────────┐   KafkaTemplate.send()    ┌──────────┐   Consume   ┌──────────────────────┐
-│ Cliente │ ────────────────→ │ OrderController │ ──────────────────────→ │ Kafka     │ ────────→ │ InventoryEventConsumer │
+│ Client  │ ────────────────→ │ OrderController │ ──────────────────────→ │ Kafka     │ ────────→ │ InventoryEventConsumer │
 │ (curl)  │                   │ (RestController) │                         │ (Broker)  │           │ (groupId=inventory)   │
 └─────────┘                   └────────────────┘                         └──────────┘           └──────────────────────┘
                                  │                                            │                          │
-                                 │ 1. Crea OrderCreatedEvent                   │ 2. Asigna partición       │ 4. Procesa evento
-                                 │    (orderId, customerId,                     │    usando hash(orderId)   │
-                                 │     total, status, occurredAt)               │    % numPartitions        │
+                                 │ 1. Creates OrderCreatedEvent                │ 2. Assigns partition     │ 4. Processes event
+                                 │    (orderId, customerId,                     │    using hash(orderId)   │
+                                 │     total, status, occurredAt)               │    % numPartitions       │
                                  │                                            │                          │
-                                 │                                            │ 3. Almacena con offset    │
-                                 │                                            │    secuencial            │
+                                 │                                            │ 3. Stores with offset    │
+                                 │                                            │    sequential            │
                                  ▼                                            ▼                          ▼
-                           HTTP 201 Created                          Kafka UI en                      Console output:
-                           + JSON del evento                         http://localhost:8080            "Evento recibido en
-                                                                                                       inventory-service: ORD-..."
+                           HTTP 201 Created                          Kafka UI at                   Console output:
+                           + JSON of event                          http://localhost:8080           "Event received in
+                                                                                                     inventory-service: ORD-..."
 ```
 
 ---
 
-#### Paso a paso detallado
+#### Step by step detailed
 
-##### Paso 1: Solicitud HTTP (Cliente → OrderController)
+##### Step 1: HTTP Request (Client → OrderController)
 
 ```bash
 curl -X POST http://localhost:8081/orders \
@@ -425,72 +427,72 @@ curl -X POST http://localhost:8081/orders \
   -d '{"customerId":"CUS-01","total":120000}'
 ```
 
-El cliente envía un `POST` al endpoint `/orders` del `order-service` corriendo en el puerto `8081`.
+The client sends a `POST` to the `/orders` endpoint of `order-service` running on port `8081`.
 
-##### Paso 2: Controlador crea el evento
+##### Step 2: Controller creates the event
 
 ```java
 OrderCreatedEvent event = new OrderCreatedEvent(
     "ORD-" + UUID.randomUUID(),     // orderId = "ORD-a1b2c3d4-e5f6-..."
     request.getCustomerId(),        // "CUS-01"
     request.getTotal(),             // 120000
-    "CREATED",                      // status inicial
+    "CREATED",                      // initial status
     Instant.now()                   // occurredAt
 );
 ```
 
-El controlador construye el evento de dominio con:
-| Campo | Valor ejemplo | Descripción |
+The controller builds the domain event with:
+| Field | Example value | Description |
 |-------|---------------|-------------|
-| `orderId` | `ORD-a1b2c3d4-e5f6-7890-abcd` | Identificador único del pedido |
-| `customerId` | `CUS-01` | Cliente que realiza la compra |
-| `total` | `120000` | Monto total del pedido |
-| `status` | `CREATED` | Estado inicial |
-| `occurredAt` | `2026-06-30T10:00:00Z` | Marca de tiempo del evento |
+| `orderId` | `ORD-a1b2c3d4-e5f6-7890-abcd` | Unique order identifier |
+| `customerId` | `CUS-01` | Customer making the purchase |
+| `total` | `120000` | Total order amount |
+| `status` | `CREATED` | Initial status |
+| `occurredAt` | `2026-06-30T10:00:00Z` | Event timestamp |
 
-##### Paso 3: Productor publica en Kafka
+##### Step 3: Producer publishes to Kafka
 
 ```java
 kafkaTemplate.send("orders", event.getOrderId(), event);
 ```
 
-`KafkaTemplate.send(topic, key, value)` realiza lo siguiente:
-1. **Serializa la clave** con `StringSerializer` → `"ORD-a1b2c3d4-..."`
-2. **Serializa el valor** con `JsonSerializer` → `{"orderId":"ORD-...","customerId":"CUS-01","total":120000,"status":"CREATED","occurredAt":"2026-06-30T10:00:00Z"}`
-3. **Calcula la partición**: `partition = hash(key) % numPartitions`
+`KafkaTemplate.send(topic, key, value)` does the following:
+1. **Serializes the key** with `StringSerializer` → `"ORD-a1b2c3d4-..."`
+2. **Serializes the value** with `JsonSerializer` → `{"orderId":"ORD-...","customerId":"CUS-01","total":120000,"status":"CREATED","occurredAt":"2026-06-30T10:00:00Z"}`
+3. **Calculates the partition**: `partition = hash(key) % numPartitions`
 
 ---
 
-##### Paso 4: Kafka asigna partición y offset
+##### Step 4: Kafka assigns partition and offset
 
-Con `KAFKA_NUM_PARTITIONS: 3` en el `docker-compose.yml`, el topic `orders` tiene **3 particiones**.
+With `KAFKA_NUM_PARTITIONS: 3` in `docker-compose.yml`, the `orders` topic has **3 partitions**.
 
-| Clave (`orderId`) | Hash | Partición asignada | ¿Por qué? |
-|-------------------|------|-------------------|-----------|
-| `ORD-a1b2c3d4-...` | `hash("ORD-...")` | `0`, `1` o `2` | `Math.abs(hashCode) % 3` |
+| Key (`orderId`) | Hash | Assigned partition | Why? |
+|-----------------|------|-------------------|------|
+| `ORD-a1b2c3d4-...` | `hash("ORD-...")` | `0`, `1` or `2` | `Math.abs(hashCode) % 3` |
 
-**Detalle del cálculo de partición:**
+**Partition calculation detail:**
 
 ```
 hash("ORD-a1b2c3...") = 123456789
 partition = 123456789 % 3 = 0  →  Partition 0
 ```
 
-El productor envía el registro al líder de la partición `0`. El broker:
-1. Asigna un **offset secuencial** dentro de la partición (ej. offset `42`)
-2. Almacena el evento
-3. Confirma la escritura al productor
+The producer sends the record to the leader of partition `0`. The broker:
+1. Assigns a **sequential offset** within the partition (e.g., offset `42`)
+2. Stores the event
+3. Confirms the write to the producer
 
 ```
 Topic: orders
-  Partition 0: [offset 40, offset 41, offset 42 ← NUEVO, ...]
+  Partition 0: [offset 40, offset 41, offset 42 ← NEW, ...]
   Partition 1: [offset 15, offset 16, ...]
   Partition 2: [offset 28, offset 29, ...]
 ```
 
-> **Nota:** La misma clave (`orderId`) siempre produce el mismo hash, por lo que **todos los eventos del mismo pedido caen en la misma partición**, garantizando orden por entidad.
+> **Note:** The same key (`orderId`) always produces the same hash, so **all events for the same order land in the same partition**, guaranteeing order by entity.
 
-##### Paso 5: Consumidor recibe el evento
+##### Step 5: Consumer receives the event
 
 ```java
 @Service
@@ -504,7 +506,7 @@ public class InventoryEventConsumer {
 
     @KafkaListener(topics = "orders", groupId = "inventory-service")
     public void consume(OrderCreatedEvent event) {
-        System.out.println("Inventory Service: procesando pedido " + event.getOrderId());
+        System.out.println("Inventory Service: processing order " + event.getOrderId());
 
         boolean reserved = event.getTotal() <= 300000;
 
@@ -517,94 +519,94 @@ public class InventoryEventConsumer {
         );
 
         inventoryProducer.publish(inventoryEvent);
-        System.out.println("Inventory Service: " + inventoryEvent.getStatus() + " para pedido " + event.getOrderId());
+        System.out.println("Inventory Service: " + inventoryEvent.getStatus() + " for order " + event.getOrderId());
     }
 }
 ```
 
-El `InventoryEventConsumer` pertenece al Consumer Group **`inventory-service`**. Kafka asigna las particiones del topic `orders` a los consumidores activos dentro de este grupo. Este consumidor no solo registra el evento, sino que también ejecuta la lógica de negocio de inventario y publica el resultado en el topic `inventory`.
+The `InventoryEventConsumer` belongs to Consumer Group **`inventory-service`**. Kafka assigns the partitions of the `orders` topic to active consumers within this group. This consumer not only logs the event, but also executes the inventory business logic and publishes the result to the `inventory` topic.
 
-**Asignación de particiones (1 consumidor, 3 particiones):**
+**Partition assignment (1 consumer, 3 partitions):**
 
-| Consumidor | Particiones asignadas |
-|------------|----------------------|
-| `InventoryEventConsumer` (único) | `0`, `1`, `2` |
+| Consumer | Assigned partitions |
+|----------|-------------------|
+| `InventoryEventConsumer` (single) | `0`, `1`, `2` |
 
-Si hubiera **3 instancias** del `inventory-service`:
+If there were **3 instances** of `inventory-service`:
 
-| Consumidor | Particiones asignadas |
-|------------|----------------------|
+| Consumer | Assigned partitions |
+|----------|-------------------|
 | `InventoryEventConsumer-1` | `0` |
 | `InventoryEventConsumer-2` | `1` |
 | `InventoryEventConsumer-3` | `2` |
 
-Esto permite escalar horizontalmente: más consumidores = más paralelismo.
+This allows horizontal scaling: more consumers = more parallelism.
 
-##### Paso 6: Consumidor deserializa y procesa
+##### Step 6: Consumer deserializes and processes
 
-El `JsonDeserializer` convierte el JSON recibido de vuelta a un objeto `OrderCreatedEvent`. El método `consume()` imprime:
+The `JsonDeserializer` converts the received JSON back into an `OrderCreatedEvent` object. The `consume()` method prints:
 
 ```
-Evento recibido en inventory-service: ORD-a1b2c3d4-e5f6-7890-abcd
+Event received in inventory-service: ORD-a1b2c3d4-e5f6-7890-abcd
 ```
 
 ---
 
-#### Evidencia en Kafka UI
+#### Evidence in Kafka UI
 
-Kafka UI está disponible en **http://localhost:8080**. Para verificar la trazabilidad:
+Kafka UI is available at **http://localhost:8080**. To verify traceability:
 
-| Pantalla | Qué observar | Información |
-|----------|-------------|-------------|
-| **Topics → orders → Partitions** | Lista de particiones (0, 1, 2) | Número de particiones configurado (3) |
-| **Topics → orders → Messages** | Mensajes publicados en orden | Cada mensaje muestra: offset, key, value, timestamp |
-| **Consumers → inventory-service** | Grupo de consumidores activo | Asignación de particiones por consumidor |
-| **Consumers → inventory-service → Lag** | Diferencia entre último offset y offset consumido | Lag = 0 si está al día, > 0 si hay atraso |
+| Screen | What to observe | Information |
+|--------|----------------|-------------|
+| **Topics → orders → Partitions** | List of partitions (0, 1, 2) | Configured number of partitions (3) |
+| **Topics → orders → Messages** | Published messages in order | Each message shows: offset, key, value, timestamp |
+| **Consumers → inventory-service** | Active consumer group | Partition assignment per consumer |
+| **Consumers → inventory-service → Lag** | Difference between last offset and consumed offset | Lag = 0 if up to date, > 0 if behind |
 
-**Ejemplo de lo que se ve en Kafka UI para un mensaje:**
+**Example of what is seen in Kafka UI for a message:**
 
 | Offset | Key | Value | Partition | Timestamp |
 |--------|-----|-------|-----------|-----------|
 | 42 | `ORD-a1b2c3d4-e5f6-7890-abcd` | `{"orderId":"ORD-...","customerId":"CUS-01","total":120000,"status":"CREATED","occurredAt":"2026-06-30T10:00:00Z"}` | 0 | 2026-06-30 10:00:00 |
 | 43 | `ORD-ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb` | `{"orderId":"ORD-...","customerId":"CUS-02","total":85000,"status":"CREATED","occurredAt":"2026-06-30T10:01:00Z"}` | 1 | 2026-06-30 10:01:00 |
 
-> **Importante:** Al hacer clic en un mensaje en Kafka UI, se puede ver el contenido completo del JSON, confirmando que el evento llegó correctamente con todos sus campos.
+> **Important:** When clicking on a message in Kafka UI, the complete JSON content can be seen, confirming that the event arrived correctly with all its fields.
 
 ---
 
-#### Resumen de trazabilidad
+#### Traceability summary
 
-| Elemento solicitado | Valor |
-|---------------------|-------|
+| Requested element | Value |
+|-------------------|-------|
 | **Topic** | `orders` |
-| **Clave** | `orderId` (ej. `ORD-a1b2c3d4-e5f6-7890-abcd`) |
-| **Partición** | Determinada por `hash(orderId) % 3` → `0`, `1` o `2` |
-| **Offset** | Secuencial por partición (ej. `42`, `43`, ...) |
-| **Consumidor** | `InventoryEventConsumer.consume()` |
-| **Consumer Group** | `inventory-service` (definido en `@KafkaListener`) |
-| **Endpoint HTTP** | `POST http://localhost:8081/orders` |
-| **Serialización** | Key: `StringSerializer`, Value: `JsonSerializer` |
-| **Deserialización** | Key: `StringDeserializer`, Value: `JsonDeserializer` |
-| **Evidencia Kafka UI** | Topics → orders → Messages → ver key, value, partition, offset |
+| **Key** | `orderId` (e.g., `ORD-a1b2c3d4-e5f6-7890-abcd`) |
+| **Partition** | Determined by `hash(orderId) % 3` → `0`, `1` or `2` |
+| **Offset** | Sequential per partition (e.g., `42`, `43`, ...) |
+| **Consumer** | `InventoryEventConsumer.consume()` |
+| **Consumer Group** | `inventory-service` (defined in `@KafkaListener`) |
+| **HTTP Endpoint** | `POST http://localhost:8081/orders` |
+| **Serialization** | Key: `StringSerializer`, Value: `JsonSerializer` |
+| **Deserialization** | Key: `StringDeserializer`, Value: `JsonDeserializer` |
+| **Kafka UI Evidence** | Topics → orders → Messages → see key, value, partition, offset |
 
 ---
 
-#### Puntos clave de la trazabilidad
+#### Key traceability points
 
-1. **La clave `orderId` garantiza orden por pedido**: todas las actualizaciones del mismo pedido caen en la misma partición
-2. **3 particiones permiten hasta 3 consumidores en paralelo** dentro del mismo Consumer Group
-3. **El Consumer Group `inventory-service` es diferente al `group-id` por defecto** (`order-service`): el `application.yml` define un valor por defecto, pero `@KafkaListener` lo sobrescribe
-4. **El lag en Kafka UI** indica si el consumidor está procesando eventos al mismo ritmo que se producen
-5. **El evento persiste en Kafka** aunque el consumidor haya procesado (gracias a la retención configurada)
+1. **The `orderId` key guarantees order per order**: all updates for the same order land in the same partition
+2. **3 partitions allow up to 3 consumers in parallel** within the same Consumer Group
+3. **The `inventory-service` Consumer Group is different from the default `group-id`** (`order-service`): the `application.yml` defines a default value, but `@KafkaListener` overrides it
+4. **Lag in Kafka UI** indicates whether the consumer is processing events at the same rate they are produced
+5. **The event persists in Kafka** even after the consumer has processed it (thanks to the configured retention)
 
-**Comando de verificación en terminal:**
+**Terminal verification command:**
 
 ```bash
-# Ver offsets del grupo inventory-service
+# View offsets of the inventory-service group
 kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
   --group inventory-service --describe
 
-# Output esperado:
+# Expected output:
 # GROUP              TOPIC   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
 # inventory-service  orders  0          42              42              0
 # inventory-service  orders  1          16              16              0
@@ -614,25 +616,25 @@ kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
 
 ---
 
-## Capítulo 5. Caso de estudio: sistema de pedidos basado en eventos
+## Chapter 5. Case study: event-based order system
 
-### Contexto
+### Context
 
-Una plataforma de comercio electrónico desea desacoplar los procesos de pedidos, pagos, inventario, facturación, notificaciones, analítica y auditoría usando Kafka. Se proponen 7 servicios lógicos (order-service, payment-service, inventory-service, invoice-service, notification-service, analytics-service, audit-service) y 6 topics (`orders`, `payments`, `inventory`, `invoices`, `notifications`, `audit`). La comunicación asíncrona introduce **consistencia eventual**: el pedido avanza por estados (CREATED → PAYMENT_APPROVED → INVENTORY_RESERVED → CONFIRMED/CANCELLED). No todo debe ser asíncrono — consultas como catálogo o autenticación pueden mantenerse con REST.
+An e-commerce platform wants to decouple order, payment, inventory, invoicing, notification, analytics, and audit processes using Kafka. Seven logical services are proposed (order-service, payment-service, inventory-service, invoice-service, notification-service, analytics-service, audit-service) and 6 topics (`orders`, `payments`, `inventory`, `invoices`, `notifications`, `audit`). Asynchronous communication introduces **eventual consistency**: the order progresses through states (CREATED → PAYMENT_APPROVED → INVENTORY_RESERVED → CONFIRMED/CANCELLED). Not everything should be asynchronous — queries like catalog or authentication can remain with REST.
 
-### Actividad 5. Diseño del flujo
+### Activity 5. Flow design
 
-Proponga los eventos, topics, productores, consumidores, Consumer Groups y claves de particionamiento para el flujo de compra. Justifique por qué no conviene usar un único topic global llamado `events`.
+Propose the events, topics, producers, consumers, Consumer Groups, and partitioning keys for the purchase flow. Justify why a single global topic called `events` is not advisable.
 
 <details>
-<summary><b>Desarrollo de la Actividad 5</b></summary>
+<summary><b>Activity 5 Development</b></summary>
 
-#### Diagrama de flujo general
+#### General flow diagram
 
-![Diagrama de flujo](diagrams/actividad_5_flujo.png)
-*Fuente: `diagrams/actividad_5_flujo.puml`*
+![General flow diagram](diagrams/actividad_5_flujo.png)
+*Source: `diagrams/actividad_5_flujo.puml`*
 
-Para regenerar la imagen desde el archivo PlantUML:
+To regenerate the image from the PlantUML file:
 
 ```bash
 plantuml diagrams/actividad_5_flujo.puml
@@ -640,9 +642,9 @@ plantuml diagrams/actividad_5_flujo.puml
 
 ---
 
-#### Máquina de estados del pedido
+#### Order state machine
 
-Cada pedido atraviesa los siguientes estados, reflejados por los eventos que se publican:
+Each order goes through the following states, reflected by the events that are published:
 
 ```
                     ┌──────────────┐
@@ -668,214 +670,214 @@ Los eventos `payment-rejected`, `inventory-rejected` o `order-cancelled` llevan 
 
 ---
 
-#### Tabla completa de eventos, productores, consumidores y grupos
+#### Complete event, producer, consumer, and group table
 
-| Evento | Topic | Productor | Consumidores | Consumer Group | Clave | ¿Por qué esa clave? |
-|--------|-------|-----------|-------------|----------------|-------|-------------------|
-| `order-created` | `orders` | order-service | payment-service, inventory-service, analytics-service, audit-service | `payment-svc`, `inventory-svc`, `analytics-svc`, `audit-svc` | `orderId` | Todos los eventos del mismo pedido caen en la misma partición |
-| `order-cancelled` | `orders` | cualquier servicio | payment-service, inventory-service, notification-service, audit-service | `payment-svc`, `inventory-svc`, `notification-svc`, `audit-svc` | `orderId` | Misma entidad de negocio |
-| `payment-approved` | `payments` | payment-service | invoice-service, notification-service, analytics-service, audit-service | `invoice-svc`, `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Relación 1:1 con el pedido |
-| `payment-rejected` | `payments` | payment-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
-| `inventory-reserved` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
-| `inventory-rejected` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Misma correlación con pedido |
-| `invoice-generated` | `invoices` | invoice-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Asociado al pedido |
-| `notification-sent` | `notifications` | notification-service | analytics-service, audit-service | `analytics-svc`, `audit-svc` | `orderId` | Seguimiento por pedido |
-| `audit-record-created` | `audit` | todos | audit-service | `audit-svc` | `correlationId` | Agrupa toda la trazabilidad de una transacción completa |
+| Event | Topic | Producer | Consumers | Consumer Group | Key | Why this key? |
+|-------|-------|----------|-----------|----------------|-----|---------------|
+| `order-created` | `orders` | order-service | payment-service, inventory-service, analytics-service, audit-service | `payment-svc`, `inventory-svc`, `analytics-svc`, `audit-svc` | `orderId` | All events for the same order land in the same partition |
+| `order-cancelled` | `orders` | any service | payment-service, inventory-service, notification-service, audit-service | `payment-svc`, `inventory-svc`, `notification-svc`, `audit-svc` | `orderId` | Same business entity |
+| `payment-approved` | `payments` | payment-service | invoice-service, notification-service, analytics-service, audit-service | `invoice-svc`, `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | 1:1 relationship with the order |
+| `payment-rejected` | `payments` | payment-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Same correlation with order |
+| `inventory-reserved` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Same correlation with order |
+| `inventory-rejected` | `inventory` | inventory-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Same correlation with order |
+| `invoice-generated` | `invoices` | invoice-service | notification-service, analytics-service, audit-service | `notification-svc`, `analytics-svc`, `audit-svc` | `orderId` | Associated with the order |
+| `notification-sent` | `notifications` | notification-service | analytics-service, audit-service | `analytics-svc`, `audit-svc` | `orderId` | Tracking per order |
+| `audit-record-created` | `audit` | all | audit-service | `audit-svc` | `correlationId` | Groups all traceability of a complete transaction |
 
 ---
 
-#### Consistencia eventual — línea de tiempo de un pedido exitoso
+#### Eventual consistency — timeline of a successful order
 
 ```
-Tiempo →
+Time →
 
 order-created  ──────→ payment-approved ──────→ inventory-reserved ──────→ invoice-generated ──────→ notification-sent
 (orders topic)         (payments topic)          (inventory topic)          (invoices topic)          (notifications topic)
 
-Estado orden:  CREATED ───► PAYMENT_APPROVED ───► INVENTORY_RESERVED ───► CONFIRMED ───► NOTIFIED
+Order status:  CREATED ───► PAYMENT_APPROVED ───► INVENTORY_RESERVED ───► CONFIRMED ───► NOTIFIED
 ```
 
-Entre cada paso, los servicios downstream pueden estar en diferentes estados de procesamiento. Esto es **consistencia eventual**: no hay una transacción distribuida que garantice que todos los servicios estén sincronizados al mismo instante.
+Between each step, downstream services can be at different processing states. This is **eventual consistency**: there is no distributed transaction guaranteeing that all services are synchronized at the same instant.
 
 ---
 
-#### Análisis: ¿Por qué NO usar un único topic global `events`?
+#### Analysis: Why NOT use a single global topic `events`?
 
-##### 1. Mezcla de eventos de diferente dominio y cardinalidad
+##### 1. Mixing events from different domains and cardinalities
 
-| Aspecto | Topic único `events` | Topics por dominio |
-|---------|---------------------|-------------------|
-| **Eventos mezclados** | `order-created`, `payment-approved`, `notification-sent`, `audit-record-created` todo en el mismo lugar | Cada topic contiene solo eventos de un dominio (`orders`, `payments`, `inventory`, ...) |
-| **Clave de particionamiento** | Imposible elegir una clave única — `orderId` no sirve para eventos de auditoría que usan `correlationId` | Cada topic tiene la clave adecuada a su dominio |
-| **Consumidores** | Un consumidor de `payment-service` recibe también eventos de `notification-sent` que no le interesan, desperdiciando recursos y ancho de banda | Cada consumidor solo recibe los eventos de los topics que le corresponden |
-| **Rendimiento** | Un solo topic concentra todo el throughput del sistema, creando un cuello de botella | El throughput se distribuye entre múltiples topics |
+| Aspect | Single `events` topic | Domain topics |
+|--------|---------------------|--------------|
+| **Mixed events** | `order-created`, `payment-approved`, `notification-sent`, `audit-record-created` all in the same place | Each topic contains only events from one domain (`orders`, `payments`, `inventory`, ...) |
+| **Partitioning key** | Impossible to choose a single key — `orderId` does not work for audit events that use `correlationId` | Each topic has the key appropriate for its domain |
+| **Consumers** | A `payment-service` consumer also receives `notification-sent` events that it does not care about, wasting resources and bandwidth | Each consumer only receives events from the topics it cares about |
+| **Throughput** | A single topic concentrates all system throughput, creating a bottleneck | Throughput is distributed across multiple topics |
 
-**Ejemplo concreto:** El `payment-service` necesita consumir solo `order-created`. Con un topic único `events`, recibe también `notification-sent`, `invoice-generated`, `audit-record-created`, etc. — eventos que debe filtrar del lado del consumidor, aumentando la carga innecesariamente.
+**Concrete example:** The `payment-service` needs to consume only `order-created`. With a single `events` topic, it also receives `notification-sent`, `invoice-generated`, `audit-record-created`, etc. — events it must filter on the consumer side, increasing load unnecessarily.
 
-##### 2. Dificultad para configurar políticas específicas por tipo de evento
+##### 2. Difficulty configuring specific policies per event type
 
-| Política | Topic único `events` | Topics por dominio |
-|----------|---------------------|-------------------|
-| **Retención** | Una sola retención para todos los eventos. Auditoría necesita retención larga (90+ días), notificaciones pueden ser cortas (24h). Forzado a elegir el mínimo común denominador. | Cada topic configura su retención según necesidad: `audit: 90 días`, `notifications: 7 días`, `orders: 30 días` |
-| **Particiones** | Un número de particiones para todos los eventos. `audit` tiene alto volumen (100k eventos/día) vs `invoices` bajo volumen (1k/día). | Cada topic ajusta particiones según su volumen: `audit: 12 particiones`, `invoices: 3 particiones` |
-| **Compresión** | No se puede aplicar compresión selectiva. | Topics de alto volumen pueden usar compresión `snappy` o `zstd` |
-| **DLT (Dead Letter Topic)** | Los DLT se mezclarían: `events.DLT` contendría fallos de todos los servicios sin distinción. | Cada topic tiene su propio DLT: `orders.DLT`, `payments.DLT`, `inventory.DLT` |
+| Policy | Single `events` topic | Domain topics |
+|--------|---------------------|--------------|
+| **Retention** | A single retention for all events. Audit needs long retention (90+ days), notifications can be short (24h). Forced to choose the least common denominator. | Each topic configures its retention as needed: `audit: 90 days`, `notifications: 7 days`, `orders: 30 days` |
+| **Partitions** | One partition count for all events. `audit` has high volume (100k events/day) vs `invoices` low volume (1k/day). | Each topic adjusts partitions per volume: `audit: 12 partitions`, `invoices: 3 partitions` |
+| **Compression** | Cannot apply selective compression. | High-volume topics can use `snappy` or `zstd` compression |
+| **DLT (Dead Letter Topic)** | DLTs would mix: `events.DLT` would contain failures from all services without distinction. | Each topic has its own DLT: `orders.DLT`, `payments.DLT`, `inventory.DLT` |
 
-**Ejemplo concreto:** La auditoría necesita conservar eventos por 90 días por cumplimiento normativo (SOX). Las notificaciones solo necesitan 24 horas. Con un topic único, se elige 90 días para todos, duplicando el almacenamiento innecesario de notificaciones; o se elige 24 horas y se pierden los registros de auditoría.
+**Concrete example:** Audit needs to retain events for 90 days for regulatory compliance (SOX). Notifications only need 24 hours. With a single topic, you either choose 90 days for everything, doubling unnecessary storage for notifications, or choose 24 hours and lose audit records.
 
-##### 3. Dificultad para asignar permisos y control de acceso
+##### 3. Difficulty assigning permissions and access control
 
-| Aspecto | Topic único `events` | Topics por dominio |
-|---------|---------------------|-------------------|
-| **ACLs** | Un solo conjunto de permisos. Todos los servicios pueden leer/escribir todos los eventos. Un bug en `notification-service` podría contaminar eventos de pago. | ACLs granulares: `payment-service` solo escribe en `payments`, `inventory-service` solo en `inventory` |
-| **Aislamiento** | No hay aislamiento entre dominios. | Cada dominio es independiente. |
-| **Seguridad** | Cualquier servicio malicioso o con bug puede afectar todos los eventos del sistema. | El daño está contenido dentro del dominio del servicio. |
+| Aspect | Single `events` topic | Domain topics |
+|--------|---------------------|--------------|
+| **ACLs** | A single set of permissions. All services can read/write all events. A bug in `notification-service` could contaminate payment events. | Granular ACLs: `payment-service` only writes to `payments`, `inventory-service` only to `inventory` |
+| **Isolation** | No isolation between domains. | Each domain is independent. |
+| **Security** | Any malicious or buggy service can affect all system events. | Damage is contained within the service's domain. |
 
-##### 4. Dificultad para evolucionar y versionar eventos
+##### 4. Difficulty evolving and versioning events
 
-| Aspecto | Topic único `events` | Topics por dominio |
-|---------|---------------------|-------------------|
-| **Evolución de esquema** | Si `OrderCreatedEvent` agrega un campo, el cambio afecta a todos los consumidores de `events`, incluso a los que solo procesan `notification-sent` | Solo afecta a los consumidores del topic `orders` |
-| **Compatibilidad hacia atrás** | Más difícil de mantener cuando todos los esquemas conviven en el mismo topic | Cada dominio puede versionarse de forma independiente |
-| **Múltiples versiones** | El schema registry debe manejar versiones de múltiples dominios en un solo sujeto | Cada topic tiene su propio sujeto en el schema registry |
+| Aspect | Single `events` topic | Domain topics |
+|--------|---------------------|--------------|
+| **Schema evolution** | If `OrderCreatedEvent` adds a field, the change affects all consumers of `events`, even those only processing `notification-sent` | Only affects consumers of the `orders` topic |
+| **Backward compatibility** | Harder to maintain when all schemas coexist in the same topic | Each domain can version independently |
+| **Multiple versions** | The schema registry must handle versions from multiple domains in a single subject | Each topic has its own subject in the schema registry |
 
-##### 5. Sin aislamiento de fallos
+##### 5. No failure isolation
 
 ```
-Topic único events:
-  payment-service falla → el consumer group se atasca → el lag crece
-  → TODOS los eventos se retrasan (orders, inventory, notifications, audit)
-  → El sistema completo se degrada
+Single events topic:
+  payment-service fails → the consumer group stalls → lag grows
+  → ALL events are delayed (orders, inventory, notifications, audit)
+  → The entire system degrades
 
-Topics separados:
-  payment-service falla → el lag crece solo en payments topic
-  → orders, inventory, notifications, audit siguen funcionando normalmente
-  → El resto del sistema no se ve afectado
+Separate topics:
+  payment-service fails → lag grows only in payments topic
+  → orders, inventory, notifications, audit continue working normally
+  → The rest of the system is unaffected
 ```
 
-##### 6. Dificultad para monitorear y depurar
+##### 6. Difficulty monitoring and debugging
 
-| Aspecto | Topic único `events` | Topics por dominio |
-|---------|---------------------|-------------------|
-| **Lag** | Un solo valor de lag mezcla eventos de todos los dominios. Difícil saber qué servicio está atrasado. | Lag por topic: `orders-lag=0`, `payments-lag=5000`, `inventory-lag=0`. Se identifica al instante que `payment-service` está fallando. |
-| **Trazabilidad** | Para rastrear un pedido, hay que filtrar manualmente dentro de un mar de eventos no relacionados. | Cada topic tiene eventos de un solo dominio. Rastrear un pedido es trivial. |
-| **Alertas** | Una alerta de lag alto no distingue qué servicio está fallando. | Alertas específicas por topic = diagnóstico inmediato. |
+| Aspect | Single `events` topic | Domain topics |
+|--------|---------------------|--------------|
+| **Lag** | A single lag value mixes events from all domains. Hard to know which service is behind. | Lag per topic: `orders-lag=0`, `payments-lag=5000`, `inventory-lag=0`. Instantly identifies that `payment-service` is failing. |
+| **Traceability** | To trace an order, you must manually filter through a sea of unrelated events. | Each topic has events from a single domain. Tracing an order is trivial. |
+| **Alerts** | A high lag alert does not distinguish which service is failing. | Specific alerts per topic = immediate diagnosis. |
 
-**Ejemplo concreto:** El `payment-service` deja de funcionar a las 3:00 AM. Con topics separados, una alerta muestra `payments-lag=15000`. El equipo sabe que debe revisar `payment-service`. Con un topic único, la alerta muestra `events-lag=15000` y el equipo debe investigar qué consumidor está fallando entre todos los servicios.
+**Concrete example:** The `payment-service` stops working at 3:00 AM. With separate topics, an alert shows `payments-lag=15000`. The team knows to check `payment-service`. With a single topic, the alert shows `events-lag=15000` and the team must investigate which consumer is failing among all services.
 
 ---
 
-#### Resumen de justificación
+#### Justification summary
 
-| Razón | Impacto |
-|-------|---------|
-| **Separación de dominios** | Cada servicio consume solo lo que necesita — eficiencia de red y procesamiento |
-| **Políticas específicas** | Retención, particiones y compresión adaptadas a cada tipo de evento |
-| **Aislamiento de fallos** | Un fallo en un servicio no bloquea los eventos de otros dominios |
-| **Seguridad y ACLs** | Permisos granulares por dominio, menor superficie de ataque |
-| **Evolución independiente** | Cada dominio versiona sus eventos sin afectar a los demás |
-| **Monitoreo granular** | Lag, throughput y errores medibles por dominio, diagnóstico inmediato |
-| **Claves de particionamiento coherentes** | Cada topic usa la clave adecuada a su entidad (`orderId`, `correlationId`) |
+| Reason | Impact |
+|--------|--------|
+| **Domain separation** | Each service consumes only what it needs — network and processing efficiency |
+| **Specific policies** | Retention, partitions, and compression adapted to each event type |
+| **Failure isolation** | A failure in one service does not block events from other domains |
+| **Security and ACLs** | Granular permissions per domain, smaller attack surface |
+| **Independent evolution** | Each domain versions its events without affecting others |
+| **Granular monitoring** | Lag, throughput, and errors measurable per domain, immediate diagnosis |
+| **Coherent partitioning keys** | Each topic uses the key appropriate to its entity (`orderId`, `correlationId`) |
 
-> **Conclusión:** Un topic único `events` viola el principio de **separación de responsabilidades** (Single Responsibility Principle) aplicado a la infraestructura de eventos. La organización por dominios con topics dedicados mejora escalabilidad, mantenibilidad, observabilidad y seguridad — exactamente los atributos de calidad que Kafka busca proporcionar.
+> **Conclusion:** A single `events` topic violates the **separation of responsibilities** (Single Responsibility Principle) applied to event infrastructure. Organization by domain with dedicated topics improves scalability, maintainability, observability, and security — exactly the quality attributes that Kafka aims to provide.
 
 </details>
 
 ---
 
-## Capítulo 6. Laboratorio guiado extendido
+## Chapter 6. Extended guided lab
 
-### Contexto
+### Context
 
-El estudiante extiende la aplicación para que el evento `order-created` genere eventos posteriores de pagos e inventario. Se definen 3 topics obligatorios (`orders`, `payments`, `inventory`) y 3 eventos (`OrderCreatedEvent`, `PaymentProcessedEvent`, `InventoryProcessedEvent`). El flujo esperado: cliente crea pedido → order-service publica → payment-service y inventory-service consumen y publican resultados → notification-service y analytics-service reaccionan. Los consumidores de pago e inventario tienen lógica de negocio simplificada (aprueban según umbrales de total).
+The student extends the application so that the `order-created` event generates subsequent payment and inventory events. Three required topics (`orders`, `payments`, `inventory`) and 3 events (`OrderCreatedEvent`, `PaymentProcessedEvent`, `InventoryProcessedEvent`) are defined. Expected flow: client creates order → order-service publishes → payment-service and inventory-service consume and publish results → notification-service and analytics-service react. The payment and inventory consumers have simplified business logic (approve based on total thresholds).
 
-### Actividad 6. Evidencia y análisis
+### Activity 6. Evidence and analysis
 
-Cree pedidos con valores diferentes y reconstruya el flujo de eventos en Kafka UI. Identifique eventos generados, topics, claves, Consumer Groups, offsets y lag.
+Create orders with different values and reconstruct the event flow in Kafka UI. Identify generated events, topics, keys, Consumer Groups, offsets, and lag.
 
 <details>
-<summary><b>Desarrollo de la Actividad 6</b></summary>
+<summary><b>Activity 6 Development</b></summary>
 
 ---
 
-#### Paso 1: Crear los pedidos (3 valores diferentes)
+#### Step 1: Create orders (3 different values)
 
-Ejecutar los siguientes comandos `curl` contra el endpoint `POST /orders` del `order-service`:
+Run the following `curl` commands against the `POST /orders` endpoint of `order-service`:
 
 ```bash
-# Pedido 1: total bajo → pago APROBADO + inventario RESERVADO
+# Order 1: low total → payment APPROVED + inventory RESERVED
 curl -X POST http://localhost:8081/orders \
   -H "Content-Type: application/json" \
   -d '{"customerId":"CUS-01","total":100000}'
 
-# Pedido 2: total medio → pago RECHAZADO (>250k) + inventario RESERVADO (≤300k)
+# Order 2: medium total → payment REJECTED (>250k) + inventory RESERVED (≤300k)
 curl -X POST http://localhost:8081/orders \
   -H "Content-Type: application/json" \
   -d '{"customerId":"CUS-02","total":260000}'
 
-# Pedido 3: total alto → pago RECHAZADO + inventario RECHAZADO (>300k)
+# Order 3: high total → payment REJECTED + inventory REJECTED (>300k)
 curl -X POST http://localhost:8081/orders \
   -H "Content-Type: application/json" \
   -d '{"customerId":"CUS-03","total":350000}'
 ```
 
-Cada pedido devuelve `201 Created` con el JSON del `OrderCreatedEvent`, incluyendo un `orderId` generado con UUID.
+Each order returns `201 Created` with the `OrderCreatedEvent` JSON, including a UUID-generated `orderId`.
 
 ---
 
-#### Paso 2: Resultados esperados según la lógica de negocio
+#### Step 2: Expected results based on business logic
 
-| Pedido | Total | Regla Pago (≤ 250k) | Regla Inventario (≤ 300k) | Resultado Pago | Resultado Inventario |
-|--------|-------|---------------------|--------------------------|----------------|---------------------|
-| ORD-001 | 100000 | Si (100000 ≤ 250000) | Si (100000 ≤ 300000) | **APPROVED** | **RESERVED** |
-| ORD-002 | 260000 | No (260000 > 250000) | Si (260000 ≤ 300000) | **REJECTED** | **RESERVED** |
+| Order | Total | Payment Rule (≤ 250k) | Inventory Rule (≤ 300k) | Payment Result | Inventory Result |
+|-------|-------|----------------------|------------------------|----------------|------------------|
+| ORD-001 | 100000 | Yes (100000 ≤ 250000) | Yes (100000 ≤ 300000) | **APPROVED** | **RESERVED** |
+| ORD-002 | 260000 | No (260000 > 250000) | Yes (260000 ≤ 300000) | **REJECTED** | **RESERVED** |
 | ORD-003 | 350000 | No (350000 > 250000) | No (350000 > 300000) | **REJECTED** | **REJECTED** |
 
 ---
 
-#### Paso 3: Reconstrucción del flujo en Kafka UI
+#### Step 3: Reconstruct the flow in Kafka UI
 
-Navegar a **http://localhost:8080** y seguir estos pasos para reconstruir el flujo de cada pedido:
+Navigate to **http://localhost:8080** and follow these steps to reconstruct the flow for each order:
 
-**3.1 — Verificar topics creados**
-- Ir a **Topics** → deben aparecer `orders`, `payments`, `inventory` (3 particiones cada uno)
+**3.1 — Verify created topics**
+- Go to **Topics** → `orders`, `payments`, `inventory` should appear (3 partitions each)
 
-**3.2 — Rastrear ORD-001 (flujo completo exitoso)**
+**3.2 — Trace ORD-001 (complete successful flow)**
 ```
-1. Topics → orders → Messages → buscar "ORD-001" en key/valor
-   → Ver: order-created con status "CREATED"
-2. Topics → payments → Messages → buscar "ORD-001"
-   → Ver: payment-processed con status "APPROVED"
-3. Topics → inventory → Messages → buscar "ORD-001"
-   → Ver: inventory-processed con status "RESERVED"
-```
-
-**3.3 — Rastrear ORD-002 (pago rechazado, inventario reservado)**
-```
-1. Topics → orders → Messages → buscar "ORD-002"
-   → Ver: order-created con status "CREATED"
-2. Topics → payments → Messages → buscar "ORD-002"
-   → Ver: payment-processed con status "REJECTED"
-3. Topics → inventory → Messages → buscar "ORD-002"
-   → Ver: inventory-processed con status "RESERVED"
+1. Topics → orders → Messages → search for "ORD-001" in key/value
+   → See: order-created with status "CREATED"
+2. Topics → payments → Messages → search for "ORD-001"
+   → See: payment-processed with status "APPROVED"
+3. Topics → inventory → Messages → search for "ORD-001"
+   → See: inventory-processed with status "RESERVED"
 ```
 
-**3.4 — Rastrear ORD-003 (todo rechazado)**
+**3.3 — Trace ORD-002 (payment rejected, inventory reserved)**
 ```
-1. Topics → orders → Messages → buscar "ORD-003"
-   → Ver: order-created con status "CREATED"
-2. Topics → payments → Messages → buscar "ORD-003"
-   → Ver: payment-processed con status "REJECTED"
-3. Topics → inventory → Messages → buscar "ORD-003"
-   → Ver: inventory-processed con status "REJECTED"
+1. Topics → orders → Messages → search for "ORD-002"
+   → See: order-created with status "CREATED"
+2. Topics → payments → Messages → search for "ORD-002"
+   → See: payment-processed with status "REJECTED"
+3. Topics → inventory → Messages → search for "ORD-002"
+   → See: inventory-processed with status "RESERVED"
+```
+
+**3.4 — Trace ORD-003 (all rejected)**
+```
+1. Topics → orders → Messages → search for "ORD-003"
+   → See: order-created with status "CREATED"
+2. Topics → payments → Messages → search for "ORD-003"
+   → See: payment-processed with status "REJECTED"
+3. Topics → inventory → Messages → search for "ORD-003"
+   → See: inventory-processed with status "REJECTED"
 ```
 
 ---
 
-#### Paso 4: Eventos generados (resumen completo)
+#### Step 4: Generated events (complete summary)
 
-| # | Evento | Topic | Clave | Particion | Offset | Consumer Group (consumidor) |
-|---|--------|-------|-------|-----------|--------|----------------------------|
+| # | Event | Topic | Key | Partition | Offset | Consumer Group (consumer) |
+|---|-------|-------|-----|-----------|--------|--------------------------|
 | 1 | `order-created` | `orders` | ORD-001 | 0 | 0 | `payment-service`, `inventory-service`, `analytics-service` |
 | 2 | `payment-approved` | `payments` | ORD-001 | 0 | 0 | `notification-service`, `analytics-service` |
 | 3 | `inventory-reserved` | `inventory` | ORD-001 | 0 | 0 | `notification-service`, `analytics-service` |
@@ -888,31 +890,31 @@ Navegar a **http://localhost:8080** y seguir estos pasos para reconstruir el flu
 
 ---
 
-#### Paso 5: Consumer Groups y asignación de particiones
+#### Step 5: Consumer Groups and partition assignment
 
-| Consumer Group | Topics que consume | Consumidores activos | Particiones asignadas |
-|----------------|-------------------|---------------------|----------------------|
-| `payment-service` | `orders` | 1 (`PaymentEventConsumer`) | 0, 1, 2 (todas) |
-| `inventory-service` | `orders` | 1 (`InventoryEventConsumer`) | 0, 1, 2 (todas) |
-| `notification-service` | `payments`, `inventory` | 1 (`NotificationEventConsumer`) | 0, 1, 2 (cada topic) |
-| `analytics-service` | `orders`, `payments`, `inventory` | 1 (`AnalyticsEventConsumer`) | 0, 1, 2 (cada topic) |
+| Consumer Group | Topics consumed | Active consumers | Assigned partitions |
+|----------------|----------------|-----------------|-------------------|
+| `payment-service` | `orders` | 1 (`PaymentEventConsumer`) | 0, 1, 2 (all) |
+| `inventory-service` | `orders` | 1 (`InventoryEventConsumer`) | 0, 1, 2 (all) |
+| `notification-service` | `payments`, `inventory` | 1 (`NotificationEventConsumer`) | 0, 1, 2 (each topic) |
+| `analytics-service` | `orders`, `payments`, `inventory` | 1 (`AnalyticsEventConsumer`) | 0, 1, 2 (each topic) |
 
 ---
 
-#### Paso 6: Verificación de offsets y lag
+#### Step 6: Offset and lag verification
 
-**6.1 — Desde Kafka UI**
-- Ir a **Consumers** → seleccionar cada grupo → ver columna **Lag**
-- Si todos los consumidores están activos: `LAG = 0` en todas las particiones
+**6.1 — From Kafka UI**
+- Go to **Consumers** → select each group → see **Lag** column
+- If all consumers are active: `LAG = 0` on all partitions
 
-**6.2 — Desde terminal**
+**6.2 — From terminal**
 
 ```bash
-# Ver todos los grupos
+# View all groups
 kafka-consumer-groups.sh --bootstrap-server localhost:9093 --all-groups --describe
 ```
 
-Salida esperada (lag = 0 si todo está procesado):
+Expected output (lag = 0 if everything is processed):
 ```
 GROUP                TOPIC      PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
 payment-service      orders     0          1               1               0
@@ -938,117 +940,117 @@ analytics-service    inventory  1          1               1               0
 analytics-service    inventory  2          1               1               0
 ```
 
-> Si algún `LAG > 0`, significa que el consumidor está atrasado o caído. Por ejemplo, si `notification-service` muestra LAG=3 en `payments`, el consumidor no está procesando los eventos de pago.
+> If any `LAG > 0`, it means the consumer is behind or down. For example, if `notification-service` shows LAG=3 on `payments`, the consumer is not processing payment events.
 
 ---
 
-#### Paso 7: Salida esperada en consola de la aplicación
+#### Step 7: Expected console output
 
-Al crear **ORD-001** (total = 100000), la consola de Spring Boot debe mostrar:
-
-```
-Payment Service: procesando pago para pedido ORD-001
-Payment Service: pago APPROVED para pedido ORD-001
-Inventory Service: procesando pedido ORD-001
-Inventory Service: RESERVED para pedido ORD-001
-Notification Service: pago APPROVED para pedido ORD-001
-Notification Service: inventario RESERVED para pedido ORD-001
-Analytics Service: pedido creado ORD-001 - total: 100000.0
-Analytics Service: pago APPROVED para pedido ORD-001
-Analytics Service: inventario RESERVED para pedido ORD-001
-```
-
-Al crear **ORD-002** (total = 260000):
+When creating **ORD-001** (total = 100000), the Spring Boot console should show:
 
 ```
-Payment Service: procesando pago para pedido ORD-002
-Payment Service: pago REJECTED para pedido ORD-002
-Inventory Service: procesando pedido ORD-002
-Inventory Service: RESERVED para pedido ORD-002
-Notification Service: pago REJECTED para pedido ORD-002
-Notification Service: inventario RESERVED para pedido ORD-002
-Analytics Service: pedido creado ORD-002 - total: 260000.0
-Analytics Service: pago REJECTED para pedido ORD-002
-Analytics Service: inventario RESERVED para pedido ORD-002
+Payment Service: processing payment for order ORD-001
+Payment Service: payment APPROVED for order ORD-001
+Inventory Service: processing order ORD-001
+Inventory Service: RESERVED for order ORD-001
+Notification Service: payment APPROVED for order ORD-001
+Notification Service: inventory RESERVED for order ORD-001
+Analytics Service: order created ORD-001 - total: 100000.0
+Analytics Service: payment APPROVED for order ORD-001
+Analytics Service: inventory RESERVED for order ORD-001
 ```
 
-Al crear **ORD-003** (total = 350000):
+When creating **ORD-002** (total = 260000):
 
 ```
-Payment Service: procesando pago para pedido ORD-003
-Payment Service: pago REJECTED para pedido ORD-003
-Inventory Service: procesando pedido ORD-003
-Inventory Service: REJECTED para pedido ORD-003
-Notification Service: pago REJECTED para pedido ORD-003
-Notification Service: inventario REJECTED para pedido ORD-003
-Analytics Service: pedido creado ORD-003 - total: 350000.0
-Analytics Service: pago REJECTED para pedido ORD-003
-Analytics Service: inventario REJECTED para pedido ORD-003
+Payment Service: processing payment for order ORD-002
+Payment Service: payment REJECTED for order ORD-002
+Inventory Service: processing order ORD-002
+Inventory Service: RESERVED for order ORD-002
+Notification Service: payment REJECTED for order ORD-002
+Notification Service: inventory RESERVED for order ORD-002
+Analytics Service: order created ORD-002 - total: 260000.0
+Analytics Service: payment REJECTED for order ORD-002
+Analytics Service: inventory RESERVED for order ORD-002
+```
+
+When creating **ORD-003** (total = 350000):
+
+```
+Payment Service: processing payment for order ORD-003
+Payment Service: payment REJECTED for order ORD-003
+Inventory Service: processing order ORD-003
+Inventory Service: REJECTED for order ORD-003
+Notification Service: payment REJECTED for order ORD-003
+Notification Service: inventory REJECTED for order ORD-003
+Analytics Service: order created ORD-003 - total: 350000.0
+Analytics Service: payment REJECTED for order ORD-003
+Analytics Service: inventory REJECTED for order ORD-003
 ```
 
 ---
 
-#### Paso 8: Evidencia documental en Kafka UI
+#### Step 8: Documentary evidence in Kafka UI
 
-| Sección en Kafka UI | Que verificar |
-|---------------------|---------------|
-| **Topics** | Los 3 topics existen: `orders`, `payments`, `inventory` — cada uno con 3 particiones |
-| **Topics → orders → Messages** | 3 mensajes (uno por pedido) con clave = `orderId` y valor JSON con `status: "CREATED"` |
-| **Topics → payments → Messages** | 3 mensajes: ORD-001 → `APPROVED`, ORD-002 → `REJECTED`, ORD-003 → `REJECTED` |
-| **Topics → inventory → Messages** | 3 mensajes: ORD-001 → `RESERVED`, ORD-002 → `RESERVED`, ORD-003 → `REJECTED` |
-| **Consumers → payment-service** | Grupo activo, particiones 0,1,2 asignadas, lag = 0 |
-| **Consumers → inventory-service** | Grupo activo, particiones 0,1,2 asignadas, lag = 0 |
-| **Consumers → notification-service** | Grupo activo, consumiendo de `payments` e `inventory`, lag = 0 |
-| **Consumers → analytics-service** | Grupo activo, consumiendo de `orders`, `payments` e `inventory`, lag = 0 |
+| Kafka UI Section | What to verify |
+|------------------|----------------|
+| **Topics** | The 3 topics exist: `orders`, `payments`, `inventory` — each with 3 partitions |
+| **Topics → orders → Messages** | 3 messages (one per order) with key = `orderId` and JSON value with `status: "CREATED"` |
+| **Topics → payments → Messages** | 3 messages: ORD-001 → `APPROVED`, ORD-002 → `REJECTED`, ORD-003 → `REJECTED` |
+| **Topics → inventory → Messages** | 3 messages: ORD-001 → `RESERVED`, ORD-002 → `RESERVED`, ORD-003 → `REJECTED` |
+| **Consumers → payment-service** | Active group, partitions 0,1,2 assigned, lag = 0 |
+| **Consumers → inventory-service** | Active group, partitions 0,1,2 assigned, lag = 0 |
+| **Consumers → notification-service** | Active group, consuming from `payments` and `inventory`, lag = 0 |
+| **Consumers → analytics-service** | Active group, consuming from `orders`, `payments` and `inventory`, lag = 0 |
 
-**Capturas de pantalla:**
+**Screenshots:**
 
-![Evidencia 6.1 — Topics y mensajes en Kafka UI](Images/Evidencia_6_1.png)
+![Evidence 6.1 — Topics and messages in Kafka UI](Images/Evidencia_6_1.png)
 
-![Evidencia 6.2 — Consumer Groups y lag en Kafka UI](Images/Evidencia_6_2.png)
+![Evidence 6.2 — Consumer Groups and lag in Kafka UI](Images/Evidencia_6_2.png)
 
 </details>
 
 ---
 
-## Capítulo 7. Manejo de errores, reintentos y Dead Letter Topics
+## Chapter 7. Error handling, retries and Dead Letter Topics
 
-### Contexto
+### Context
 
-En sistemas distribuidos los errores son inevitables. Se clasifican en: **transitorios** (reintentar con backoff), **permanentes** (enviar a DLT), **de negocio** (publicar evento de error) y **técnicos** (reintentar y luego DLT). Un **Dead Letter Topic (DLT)** almacena eventos que no pudieron procesarse tras reintentos; es una herramienta de diagnóstico y recuperación. En Spring Kafka se configura con `DeadLetterPublishingRecoverer`, `FixedBackOff` y `DefaultErrorHandler`. La **idempotencia** permite procesar el mismo evento múltiples veces sin inconsistencias, usando `eventId`, restricciones únicas o tablas de eventos procesados.
+In distributed systems, errors are inevitable. They are classified as: **transient** (retry with backoff), **permanent** (send to DLT), **business** (publish error event), and **technical** (retry then DLT). A **Dead Letter Topic (DLT)** stores events that could not be processed after retries; it is a diagnostic and recovery tool. In Spring Kafka, it is configured with `DeadLetterPublishingRecoverer`, `FixedBackOff`, and `DefaultErrorHandler`. **Idempotence** allows processing the same event multiple times without inconsistencies, using `eventId`, unique constraints, or processed-event tables.
 
-### Actividad 7. Estrategia de errores
+### Activity 7. Error strategy
 
-Diseñe una estrategia para manejar eventos fallidos en `inventory-service`. Indique cuándo reintentar, cuándo enviar a DLT, qué información revisar y cómo evitar reprocesamientos infinitos.
+Design a strategy for handling failed events in `inventory-service`. Indicate when to retry, when to send to DLT, what information to review, and how to avoid infinite reprocessing.
 
 <details>
-<summary><b>Desarrollo de la Actividad 7</b></summary>
+<summary><b>Activity 7 Development</b></summary>
 
-**Estrategia propuesta:**
+**Proposed strategy:**
 
-| Condición | Acción |
+| Condition | Action |
 |-----------|--------|
-| Error transitorio (ej. BD caída) | Reintentar con backoff |
-| Error permanente (ej. datos inválidos) | Enviar a DLT |
-| Error de negocio (ej. producto agotado) | Publicar `inventory-rejected` |
+| Transient error (e.g., DB down) | Retry with backoff |
+| Permanent error (e.g., invalid data) | Send to DLT |
+| Business error (e.g., out of stock) | Publish `inventory-rejected` |
 
-**Configuración de reintentos:**
+**Retry configuration:**
 
-- **Número máximo de reintentos:** 3
-- **Intervalo entre reintentos:** 2000 ms (2 segundos)
-- **Backoff:** Fijo (`FixedBackOff`), sin backoff exponencial para mantener simplicidad en el laboratorio. En producción se recomienda `ExponentialBackOff` con multiplicador 2.0
+- **Maximum retries:** 3
+- **Interval between retries:** 2000 ms (2 seconds)
+- **Backoff:** Fixed (`FixedBackOff`), without exponential backoff for lab simplicity. In production, `ExponentialBackOff` with multiplier 2.0 is recommended
 
 **Dead Letter Topic:**
 
-- **Nombre del DLT:** `inventory.DLT` (convención: `{topic_original}.DLT`)
-- **Información a registrar en el DLT:** El evento original completo (key + value + headers) más metadatos del error (timestamp, excepción original, intento de entrega). Spring Kafka con `DeadLetterPublishingRecoverer` preserva automáticamente el registro original y agrega headers como `DEAD_LETTER_TOPIC`, `DEAD_LETTER_PARTITION`, `DEAD_LETTER_OFFSET`, `DEAD_LETTER_REASON` y `DEAD_LETTER_EXCEPTION`
+- **DLT name:** `inventory.DLT` (convention: `{original_topic}.DLT`)
+- **Information logged in DLT:** The complete original event (key + value + headers) plus error metadata (timestamp, original exception, delivery attempt). Spring Kafka with `DeadLetterPublishingRecoverer` automatically preserves the original record and adds headers like `DEAD_LETTER_TOPIC`, `DEAD_LETTER_PARTITION`, `DEAD_LETTER_OFFSET`, `DEAD_LETTER_REASON`, and `DEAD_LETTER_EXCEPTION`
 
-**Estrategia de idempotencia:**
+**Idempotence strategy:**
 
-Usar el `eventId` o `inventoryId` como identificador único en una tabla de eventos procesados (base de datos o almacén externo). Antes de procesar cada evento, verificar si ya fue procesado. Si ya existe, ignorarlo (log informativo). Si no existe, procesarlo y registrar el `eventId`. Esto evita duplicados por reprocesamiento de Kafka o reintentos del consumidor.
+Use `eventId` or `inventoryId` as a unique identifier in a processed events table (database or external store). Before processing each event, check if it has already been processed. If it exists, ignore it (informational log). If it does not exist, process it and register the `eventId`. This avoids duplicates from Kafka reprocessing or consumer retries.
 
 ```sql
--- Tabla de idempotencia (ejemplo conceptual)
+-- Idempotence table (conceptual example)
 CREATE TABLE processed_events (
     event_id VARCHAR(100) PRIMARY KEY,
     processed_at TIMESTAMP NOT NULL,
@@ -1056,163 +1058,163 @@ CREATE TABLE processed_events (
 );
 ```
 
-**¿Cómo evitar reprocesamientos infinitos?**
+**How to avoid infinite reprocessing?**
 
-1. **Reintentos limitados por configuración**: máximo 3 reintentos con `FixedBackOff(2000L, 3L)`. Después del tercer fallo, el evento se envía al DLT automáticamente.
-2. **Errores no recuperables sin reintento**: Excepciones como `DeserializationException`, `IllegalArgumentException` y `MessageConversionException` se envían directamente al DLT sin reintentar, ya que reintentar no corregiría el problema.
-3. **Monitoreo del DLT**: Si el DLT acumula eventos, un operador debe revisarlos manualmente o mediante un proceso automático de reparación. Si el evento se puede corregir, se re-publica al topic original.
-4. **Alerta por umbral de DLT**: Configurar una alerta cuando la cantidad de mensajes en cualquier DLT supere un umbral (ej. 10 mensajes en 5 minutos).
-
-</details>
-
----
-
-## Capítulo 8. Buenas prácticas de diseño con Kafka
-
-### Contexto
-
-Kafka no debe usarse para todo: es adecuado para desacoplamiento, alto volumen, procesamiento asíncrono, múltiples consumidores, reprocesamiento, auditoría y analítica en tiempo real, pero no para consultas simples donde REST es suficiente. Los eventos deben nombrarse como **hechos ocurridos en pasado** (ej. `order-created`, no `create-order`). Se recomienda incluir metadatos como `eventId`, `eventType`, `eventVersion`, `occurredAt`, `source` y `correlationId`. Las buenas prácticas abarcan: organización de topics por dominio, claves según entidad, particiones según volumen y paralelismo, replicación > 1 en producción, retención según necesidades, consumidores idempotentes, reintentos controlados con DLT, monitoreo de lag y versionado de eventos.
-
-### Actividad 8. Diagnóstico de buenas prácticas
-
-Revise una arquitectura que usa un topic `events`, mensajes sin clave, factor de replicación 1, sin DLT y sin monitoreo de lag. Identifique problemas, atributos afectados y mejoras prioritarias.
-
-<details>
-<summary><b>Desarrollo de la Actividad 8</b></summary>
-
-| Problema | Atributo de calidad afectado | Mejora prioritaria |
-|----------|------------------------------|-------------------|
-| Topic único `events` | Mantenibilidad, escalabilidad | Separar en topics por dominio: `orders`, `payments`, `inventory`, `invoices`, `notifications`, `audit` |
-| Mensajes sin clave | Consistencia, rendimiento | Usar `orderId` como clave para garantizar orden por entidad y distribución consistente entre particiones |
-| Factor de replicación 1 | Disponibilidad, durabilidad | Usar factor de replicación ≥ 2 en producción con mínimo 2 brokers para tolerar fallos |
-| Sin DLT | Confiabilidad, mantenibilidad | Configurar Dead Letter Topic por consumidor con reintentos controlados (`FixedBackOff`: 3 intentos, intervalo 2s) |
-| Sin monitoreo de lag | Observabilidad | Implementar monitoreo de lag por Consumer Group con alertas cuando el lag supere el umbral definido por SLA |
-
-**Resumen de mejoras:**
-
-1. Separar el topic único `events` en topics organizados por dominio, cada uno con retención, particiones y claves adaptadas a sus necesidades. Esto mejora la mantenibilidad, permite retenciones diferenciadas y facilita el monitoreo por servicio.
-
-2. Agregar `orderId` como clave de particionamiento en todos los mensajes transaccionales. Sin clave, Kafka no garantiza que eventos del mismo pedido lleguen a la misma partición, lo que puede generar inconsistencias entre servicios que procesan eventos relacionados del mismo flujo.
-
-3. Implementar estrategia de errores completa: reintentos controlados, Dead Letter Topics por servicio y monitoreo activo de lag con alertas. Sin esto, un evento que falla se pierde silenciosamente o bloquea indefinidamente al consumidor, afectando la disponibilidad y la trazabilidad del sistema.
+1. **Limited retries by configuration**: maximum 3 retries with `FixedBackOff(2000L, 3L)`. After the third failure, the event is sent to DLT automatically.
+2. **Non-recoverable errors without retry**: Exceptions like `DeserializationException`, `IllegalArgumentException`, and `MessageConversionException` are sent directly to DLT without retrying, since retrying would not fix the problem.
+3. **DLT monitoring**: If the DLT accumulates events, an operator must review them manually or through an automatic repair process. If the event can be corrected, it is re-published to the original topic.
+4. **DLT threshold alert**: Configure an alert when the number of messages in any DLT exceeds a threshold (e.g., 10 messages in 5 minutes).
 
 </details>
 
 ---
 
-## Capítulo 9. Actividades de consolidación
+## Chapter 8. Best practices for Kafka design
 
-### Contexto
+### Context
 
-Este capítulo cierra el laboratorio con decisiones arquitectónicas concretas. Agrupa tres actividades que integran todos los conceptos vistos: clasificación de procesos sincronos/asíncronos, diseño completo del flujo de eventos, y diagnóstico arquitectónico de una configuración problemática.
+Kafka should not be used for everything: it is suitable for decoupling, high volume, asynchronous processing, multiple consumers, reprocessing, auditing, and real-time analytics, but not for simple queries where REST suffices. Events should be named as **facts that occurred in the past** (e.g., `order-created`, not `create-order`). It is recommended to include metadata such as `eventId`, `eventType`, `eventVersion`, `occurredAt`, `source`, and `correlationId`. Best practices include: organizing topics by domain, keys by entity, partitions by volume and parallelism, replication > 1 in production, retention according to needs, idempotent consumers, controlled retries with DLT, lag monitoring, and event versioning.
 
-### 9.1 Actividad 1. Decisiones de comunicación
+### Activity 8. Best practices diagnosis
 
-Clasifique los siguientes procesos como REST, Kafka o arquitectura híbrida: *consultar catálogo, crear pedido, validar pago, enviar correo, actualizar analítica, registrar auditoría, consultar estado del pedido y actualizar inventario*. Justifique según respuesta inmediata, asincronía, múltiples consumidores y reprocesamiento.
+Review an architecture that uses a single `events` topic, messages without keys, replication factor 1, no DLT, and no lag monitoring. Identify problems, affected attributes, and priority improvements.
 
 <details>
-<summary><b>Desarrollo de la Actividad 9.1</b></summary>
+<summary><b>Activity 8 Development</b></summary>
 
-| Proceso | Tipo | Justificación |
-|---------|------|---------------|
-| Consultar catálogo | REST | El usuario necesita ver los productos de inmediato, no tiene sentido usar Kafka para una consulta de lectura. |
-| Crear pedido | Híbrido | Se responde al cliente con REST (confirmación inmediata) y se publica el evento en Kafka para que los demás servicios procesen en segundo plano. |
-| Validar pago | Kafka | El pago puede demorar, no es necesario bloquear al cliente. El resultado se publica como evento y los servicios reaccionan cuando está listo. |
-| Enviar correo | Kafka | Es un proceso secundario que no debe afectar el flujo principal. Si el servicio de correo falla, Kafka retiene el evento hasta que se recupere. |
-| Actualizar analítica | Kafka | No necesita inmediatez. Los indicadores se construyen consumiendo eventos históricos y se pueden reprocesar si es necesario. |
-| Registrar auditoría | Kafka | La auditoría no debe bloquear ningún flujo. Kafka guarda los eventos como log inmutable, ideal para trazabilidad. |
-| Consultar estado del pedido | REST | El cliente necesita saber el estado en ese momento. Se consulta directamente la base de datos del servicio. |
-| Actualizar inventario | Kafka | El inventario cambia como consecuencia de otros eventos (pedido creado, pago aprobado). Varios servicios pueden reaccionar al mismo evento. |
+| Problem | Affected quality attribute | Priority improvement |
+|---------|---------------------------|---------------------|
+| Single `events` topic | Maintainability, scalability | Separate into domain topics: `orders`, `payments`, `inventory`, `invoices`, `notifications`, `audit` |
+| Messages without keys | Consistency, performance | Use `orderId` as key to ensure entity ordering and consistent partition distribution |
+| Replication factor 1 | Availability, durability | Use replication factor ≥ 2 in production with at least 2 brokers for fault tolerance |
+| No DLT | Reliability, maintainability | Configure Dead Letter Topic per consumer with controlled retries (`FixedBackOff`: 3 attempts, 2s interval) |
+| No lag monitoring | Observability | Implement lag monitoring per Consumer Group with alerts when lag exceeds the defined SLA threshold |
+
+**Summary of improvements:**
+
+1. Separate the single `events` topic into domain-organized topics, each with retention, partitions, and keys adapted to their needs. This improves maintainability, allows differentiated retention, and facilitates per-service monitoring.
+
+2. Add `orderId` as a partitioning key on all transactional messages. Without a key, Kafka cannot guarantee that events from the same order reach the same partition, which can cause inconsistencies between services processing related events from the same flow.
+
+3. Implement a complete error strategy: controlled retries, Dead Letter Topics per service, and active lag monitoring with alerts. Without this, a failing event is silently lost or indefinitely blocks the consumer, affecting system availability and traceability.
 
 </details>
 
-### 9.2 Actividad 2. Diseño del flujo de eventos
+---
 
-Diseñe el flujo de eventos para el proceso de compra. Incluya eventos principales, productor, consumidores, topic, clave de particionamiento y Consumer Group. Responda por qué no conviene un único topic `events`, por qué los consumidores deben tener grupos distintos y por qué `orderId` puede ser una buena clave.
+## Chapter 9. Consolidation activities
+
+### Context
+
+This chapter closes the lab with concrete architectural decisions. It groups three activities that integrate all the concepts covered: classification of synchronous/asynchronous processes, complete event flow design, and architectural diagnosis of a problematic configuration.
+
+### 9.1 Activity 1. Communication decisions
+
+Classify the following processes as REST, Kafka, or hybrid architecture: *browse catalog, create order, validate payment, send email, update analytics, register audit, check order status, and update inventory*. Justify based on immediate response, asynchronicity, multiple consumers, and reprocessing.
 
 <details>
-<summary><b>Desarrollo de la Actividad 9.2</b></summary>
+<summary><b>Activity 9.1 Development</b></summary>
 
-**Diagrama de flujo:**
+| Process | Type | Justification |
+|---------|------|--------------|
+| Browse catalog | REST | The user needs to see products immediately; using Kafka for a read query does not make sense. |
+| Create order | Hybrid | Respond to the client with REST (immediate confirmation) and publish the event in Kafka for other services to process in the background. |
+| Validate payment | Kafka | Payment can take time; there is no need to block the client. The result is published as an event and services react when ready. |
+| Send email | Kafka | It is a secondary process that should not affect the main flow. If the email service fails, Kafka retains the event until it recovers. |
+| Update analytics | Kafka | Does not require immediacy. Indicators are built by consuming historical events and can be reprocessed if necessary. |
+| Register audit | Kafka | Auditing should not block any flow. Kafka stores events as an immutable log, ideal for traceability. |
+| Check order status | REST | The client needs to know the status at that moment. It queries the service's database directly. |
+| Update inventory | Kafka | Inventory changes as a consequence of other events (order created, payment approved). Multiple services can react to the same event. |
 
-![actividad_9-2.png](diagrams/actividad_9-2.png)
+</details>
 
-**Tabla de diseño:**
+### 9.2 Activity 2. Event flow design
 
-| Evento | Topic | Productor | Consumidores | Consumer Group | Clave |
-|--------|-------|-----------|--------------|----------------|-------|
+Design the event flow for the purchase process. Include main events, producer, consumers, topic, partitioning key, and Consumer Group. Answer why a single `events` topic is not advisable, why consumers must have different groups, and why `orderId` can be a good key.
+
+<details>
+<summary><b>Activity 9.2 Development</b></summary>
+
+**Flow diagram:**
+
+![activity_9-2.png](diagrams/actividad_9-2.png)
+
+**Design table:**
+
+| Event | Topic | Producer | Consumers | Consumer Group | Key |
+|-------|-------|----------|-----------|----------------|-----|
 | `order-created` | `orders` | order-service | payment-service, inventory-service, analytics-service, audit-service | `payment-service`, `inventory-service`, `analytics-service`, `audit-service` | `orderId` |
 | `payment-approved` | `payments` | payment-service | invoice-service, notification-service, analytics-service | `invoice-service`, `notification-service`, `analytics-service` | `orderId` |
 | `payment-rejected` | `payments` | payment-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
 | `inventory-reserved` | `inventory` | inventory-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
 | `inventory-rejected` | `inventory` | inventory-service | notification-service, analytics-service | `notification-service`, `analytics-service` | `orderId` |
 
-**Preguntas:**
+**Questions:**
 
-1. **¿Por qué no conviene un único topic `events`?**
-    - Si todos los eventos van al mismo topic, cada consumidor recibe cosas que no le interesan y tiene que filtrarlas. Además no se puede configurar retención diferente para cada tipo de evento, ni monitorear el lag por servicio. Un fallo de un consumidor afectaría a todos.
+1. **Why is a single `events` topic not advisable?**
+   - If all events go to the same topic, each consumer receives things it does not care about and has to filter them. Additionally, different retention cannot be configured for each event type, nor can lag be monitored per service. One consumer's failure would affect everyone.
 
-2. **¿Por qué los consumidores deben tener grupos distintos?**
-    - Porque dentro de un mismo grupo, cada partición solo la lee un consumidor. Si `payment-service` e `inventory-service` estuvieran en el mismo grupo, solo uno de los dos leería cada evento. Con grupos separados, los dos reciben el mismo evento de forma independiente.
+2. **Why should consumers have different groups?**
+   - Because within the same group, each partition is only read by one consumer. If `payment-service` and `inventory-service` were in the same group, only one of them would read each event. With separate groups, both receive the same event independently.
 
-3. **¿Por qué `orderId` es una buena clave?**
-    - Porque Kafka garantiza orden dentro de una partición. Con `orderId` como clave, todos los eventos del mismo pedido van a la misma partición, así el consumidor los procesa en el orden correcto.
+3. **Why is `orderId` a good key?**
+   - Because Kafka guarantees order within a partition. With `orderId` as the key, all events from the same order go to the same partition, so the consumer processes them in the correct order.
 
 </details>
 
-### 9.3 Actividad 3. Diagnóstico arquitectónico
+### 9.3 Activity 3. Architectural diagnosis
 
-Configuración propuesta:
-- Topic principal: `events`
-- Particiones: 1
-- Factor de replicación: 1
-- Retención: 12 horas
-- Mensajes sin clave
-- Sin `eventId`
-- Sin `correlationId`
-- Todos los consumidores en el mismo Consumer Group
-- Sin Dead Letter Topics
-- Sin monitoreo de lag
+Proposed configuration:
+- Main topic: `events`
+- Partitions: 1
+- Replication factor: 1
+- Retention: 12 hours
+- Messages without keys
+- No `eventId`
+- No `correlationId`
+- All consumers in the same Consumer Group
+- No Dead Letter Topics
+- No lag monitoring
 
-Realice un diagnóstico técnico breve: problemas identificados, atributos de calidad afectados, riesgos para producción, cambios prioritarios y propuesta de mejora.
+Provide a brief technical diagnosis: identified problems, affected quality attributes, production risks, priority changes, and improvement proposal.
 
 <details>
-<summary><b>Desarrollo de la Actividad 9.3</b></summary>
+<summary><b>Activity 9.3 Development</b></summary>
 
-| Problema | Atributo afectado | Riesgo | Cambio prioritario |
-|----------|-------------------|--------|-------------------|
-| Topic único `events` | Mantenibilidad, escalabilidad | Todos los servicios reciben eventos que no les corresponden, difícil de mantener y monitorear | Separar por dominio: `orders`, `payments`, `inventory`, etc. |
-| 1 partición | Escalabilidad | Solo un consumidor activo por grupo, cuello de botella bajo carga alta | Mínimo 3 particiones por topic |
-| Sin clave | Consistencia | Eventos del mismo pedido pueden procesarse en orden incorrecto | Usar `orderId` como clave |
-| Sin eventId / correlationId | Observabilidad | No se puede rastrear un evento entre servicios ni detectar duplicados | Agregar `eventId` y `correlationId` a cada evento |
-| Mismo Consumer Group | Corrección | Solo un servicio recibe cada evento, los demás nunca lo procesan | Un Consumer Group por servicio |
-| Sin DLT | Confiabilidad | Eventos fallidos se pierden sin posibilidad de recuperación | Configurar DLT con reintentos controlados |
-| Sin monitoreo de lag | Observabilidad | No se detectan consumidores caídos hasta que el problema ya afectó al negocio | Monitorear lag por grupo con alertas |
+| Problem | Affected attribute | Risk | Priority change |
+|---------|-------------------|------|-----------------|
+| Single `events` topic | Maintainability, scalability | All services receive events they do not need, difficult to maintain and monitor | Separate by domain: `orders`, `payments`, `inventory`, etc. |
+| 1 partition | Scalability | Only one active consumer per group, bottleneck under high load | Minimum 3 partitions per topic |
+| No key | Consistency | Events from the same order can be processed in wrong order | Use `orderId` as key |
+| No eventId / correlationId | Observability | Cannot trace an event across services or detect duplicates | Add `eventId` and `correlationId` to each event |
+| Same Consumer Group | Correctness | Only one service receives each event, others never process it | One Consumer Group per service |
+| No DLT | Reliability | Failed events are lost without recovery possibility | Configure DLT with controlled retries |
+| No lag monitoring | Observability | Failed consumers go undetected until the problem has already impacted the business | Monitor lag per group with alerts |
 
-**Propuesta de mejora integral:**
+**Comprehensive improvement proposal:**
 
-Separar el topic `events` en topics por dominio, cada uno con 3 particiones y replicación 2. Usar `orderId` como clave. Un Consumer Group por servicio. Agregar `eventId` y `correlationId` a los eventos. Configurar DLT con 3 reintentos y 2 segundos de intervalo. Monitorear el lag con alertas automáticas. Retención de 7 días para transaccionales y 90 días para auditoría.
+Separate the `events` topic into domain topics, each with 3 partitions and replication factor 2. Use `orderId` as the key. One Consumer Group per service. Add `eventId` and `correlationId` to events. Configure DLT with 3 retries and a 2-second interval. Monitor lag with automatic alerts. Retention of 7 days for transactional and 90 days for auditing.
 
 </details>
 
 ---
 
-## Capítulo 10. Reto final, entregables y rúbrica
+## Chapter 10. Final challenge, deliverables and rubric
 
-### Contexto
+### Context
 
-El reto final integra todos los conceptos: diseñar una arquitectura basada en eventos para una plataforma de comercio electrónico con 7 servicios (order, payment, inventory, invoice, notification, analytics, audit), 8 eventos y sus respectivos topics. El entregable es un documento técnico breve que incluya: descripción de la solución, arquitectura propuesta, tabla de servicios, tabla de eventos y topics, claves de particionamiento, Consumer Groups, estrategia de errores, riesgos y justificación de decisiones arquitectónicas. La rúbrica evalúa diseño de eventos (20%), topics y Consumer Groups (20%), justificación arquitectónica (25%), errores y observabilidad (15%), claridad (10%) y consistencia (10%).
+The final challenge integrates all concepts: design an event-driven architecture for an e-commerce platform with 7 services (order, payment, inventory, invoice, notification, analytics, audit), 8 events and their respective topics. The deliverable is a brief technical document that includes: solution description, proposed architecture, service table, event and topic table, partitioning keys, Consumer Groups, error strategy, risks, and architectural rationale. The rubric evaluates event design (20%), topics and Consumer Groups (20%), architectural justification (25%), errors and observability (15%), clarity (10%), and consistency (10%).
 
-### Desarrollo del Reto Final
+### Final Challenge Development
 
-El documento tecnico completo se encuentra en [RETO_FINAL.md](RETO_FINAL.md).
-
----
-
-## Cómo usar este README
-
-Cada capítulo incluye una sección **Contexto** que resume los conceptos clave, seguida de una sección desplegable (`<details>`) para desarrollar la actividad correspondiente. Complete cada tabla y回答 las preguntas según lo trabajado en el laboratorio. Para las actividades prácticas, incluya comandos, capturas de Kafka UI y evidencia de la ejecución.
+The complete technical document is available at [RETO_FINAL.md](RETO_FINAL.md).
 
 ---
 
-*Documento generado a partir de la guía de laboratorio "Apache Kafka y Arquitecturas Orientadas por Eventos" — ARSW, Escuela Colombiana de Ingeniería Julio Garavito.*
+## How to use this README
+
+Each chapter includes a **Context** section summarizing the key concepts, followed by a collapsible section (`<details>`) for developing the corresponding activity. Complete each table and answer the questions based on what was worked on in the lab. For hands-on activities, include commands, Kafka UI screenshots, and evidence of execution.
+
+---
+
+*Document generated from the lab guide "Apache Kafka and Event-Driven Architectures" — ARSW, Escuela Colombiana de Ingenieria Julio Garavito.*
