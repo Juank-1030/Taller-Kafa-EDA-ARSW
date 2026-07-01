@@ -1,0 +1,87 @@
+@startuml
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
+skinparam packageStyle rectangle
+
+title "Arquitectura de eventos - Plataforma de comercio electronico"
+
+actor Cliente as CLI
+
+package "Capa de entrada (REST)" {
+  component "order-service\n[Consumer Group: order-service]" as OS
+}
+
+package "Apache Kafka" as KAFKA {
+  queue "orders\n[3 particiones]" as TOPIC_ORDERS
+  queue "payments\n[3 particiones]" as TOPIC_PAYMENTS
+  queue "inventory\n[3 particiones]" as TOPIC_INVENTORY
+  queue "invoices\n[3 particiones]" as TOPIC_INVOICES
+  queue "notifications\n[3 particiones]" as TOPIC_NOTIFICATIONS
+  queue "audit\n[3 particiones]" as TOPIC_AUDIT
+
+  rectangle "DLTs\n{topico}.DLT" as DLTS
+}
+
+package "Procesamiento de negocio" {
+  component "payment-service\n[Consumer Group: payment-service]" as PS
+  component "inventory-service\n[Consumer Group: inventory-service]" as IS
+  component "invoice-service\n[Consumer Group: invoice-service]" as IVS
+}
+
+package "Notificaciones y analitica" {
+  component "notification-service\n[Consumer Group: notification-service]" as NS
+  component "analytics-service\n[Consumer Group: analytics-service]" as AS
+}
+
+package "Infraestructura" {
+  component "audit-service\n[Consumer Group: audit-service]" as AUD
+}
+
+' Conexiones REST
+CLI -right-> OS : POST /orders\n(HTTP REST)
+
+' order-service produce
+OS --> TOPIC_ORDERS : publica\norder-created
+
+' payment-service consume y produce
+TOPIC_ORDERS --> PS : consume\norder-created
+PS --> TOPIC_PAYMENTS : publica\npayment-approved\npayment-rejected
+
+' inventory-service consume y produce
+TOPIC_ORDERS --> IS : consume\norder-created
+IS --> TOPIC_INVENTORY : publica\ninventory-reserved\ninventory-rejected
+
+' invoice-service consume y produce
+TOPIC_PAYMENTS --> IVS : consume\npayment-*
+TOPIC_INVENTORY --> IVS : consume\ninventory-*
+IVS --> TOPIC_INVOICES : publica\ninvoice-generated
+
+' notification-service consume y produce
+TOPIC_PAYMENTS --> NS : consume\npayment-*
+TOPIC_INVENTORY --> NS : consume\ninventory-*
+TOPIC_INVOICES --> NS : consume\ninvoice-*
+NS --> TOPIC_NOTIFICATIONS : publica\nnotification-sent
+
+' analytics-service consume
+TOPIC_ORDERS --> AS : consume\norder-created
+TOPIC_PAYMENTS --> AS : consume\npayment-*
+TOPIC_INVENTORY --> AS : consume\ninventory-*
+TOPIC_INVOICES --> AS : consume\ninvoice-*
+
+' audit-service consume y produce
+TOPIC_ORDERS --> AUD : consume
+TOPIC_PAYMENTS --> AUD : consume
+TOPIC_INVENTORY --> AUD : consume
+TOPIC_INVOICES --> AUD : consume
+TOPIC_NOTIFICATIONS --> AUD : consume
+AUD --> TOPIC_AUDIT : publica\naudit-record-created
+
+' DLT
+PS --> DLTS : errores permanentes\ny transitorios (3 reintentos)
+IS --> DLTS
+IVS --> DLTS
+NS --> DLTS
+
+@enduml
