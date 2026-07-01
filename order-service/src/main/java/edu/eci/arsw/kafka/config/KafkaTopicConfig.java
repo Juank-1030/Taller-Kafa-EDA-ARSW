@@ -31,4 +31,36 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic notificationsTopic() {
+        return TopicBuilder.name("notifications")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic ordersDltTopic() {
+        return TopicBuilder.name("orders.DLT")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic paymentsDltTopic() {
+        return TopicBuilder.name("payments.DLT")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic inventoryDltTopic() {
+        return TopicBuilder.name("inventory.DLT")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
 }

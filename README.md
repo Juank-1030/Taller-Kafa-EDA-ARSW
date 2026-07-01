@@ -42,6 +42,8 @@ El desarrollo de software ha evolucionado desde arquitecturas monolíticas y cli
 
 Clasifique qué procesos deberían ser síncronos, asíncronos o híbridos para una tienda en línea: *consultar productos, crear pedido, validar pago, enviar notificación, actualizar analítica y registrar auditoría*. Justifique brevemente su decisión.
 
+<details>
+<summary><b>Desarrollo de la Actividad 1</b></summary>
 
 | Proceso | Tipo | Arquitectura | Justificación principal |
 |---------|------|-------------|----------------------|
@@ -167,7 +169,8 @@ Apache Kafka es una plataforma distribuida de *event streaming* que funciona com
 
 Analice una configuración con un topic `orders`, **una partición**, **factor de replicación 1**, **mensajes sin clave** y **retención de 24 horas**. Identifique riesgos y proponga mejoras para un ambiente productivo.
 
-
+<details>
+<summary><b>Desarrollo de la Actividad 2</b></summary>
 
 #### Análisis de la configuración propuesta
 
@@ -381,13 +384,14 @@ Esto evidencia en la práctica el riesgo que se plantea en la **Actividad 2 (Dec
 
 ### Contexto
 
-Se implementa una aplicación Spring Boot con productor y consumidor Kafka. La configuración se define en `application.yml` con `bootstrap-servers: localhost:9092`, serializador JSON (`JsonSerializer`/`JsonDeserializer`) y `group-id: order-service`. Se define el evento de dominio `OrderCreatedEvent` con atributos `orderId`, `customerId`, `total`, `status` y `occurredAt`. El productor usa `KafkaTemplate` para publicar en el topic `orders` usando `orderId` como clave. El consumidor usa `@KafkaListener`. Un `@RestController` expone un endpoint `POST /orders` que recibe la solicitud HTTP y publica el evento.
+Se implementa una aplicación Spring Boot con productor y consumidor Kafka. La configuración se define en `application.yaml` con `bootstrap-servers: localhost:9093`, serializador JSON (`JsonSerializer`/`JsonDeserializer`) y `group-id: order-service`. Se define el evento de dominio `OrderCreatedEvent` con atributos `orderId`, `customerId`, `total`, `status` y `occurredAt`. El productor usa `KafkaTemplate` para publicar en el topic `orders` usando `orderId` como clave. El consumidor usa `@KafkaListener`. Un `@RestController` expone un endpoint `POST /orders` que recibe la solicitud HTTP y publica el evento.
 
 ### Actividad 4. Trazabilidad del evento
 
 Documente el recorrido del evento desde la solicitud HTTP hasta el consumidor. Indique topic, clave, partición, consumidor, Consumer Group y evidencia en Kafka UI.
 
-
+<details>
+<summary><b>Desarrollo de la Actividad 4</b></summary>
 
 #### Recorrido completo del evento
 
@@ -775,6 +779,8 @@ Topics separados:
 
 > **Conclusión:** Un topic único `events` viola el principio de **separación de responsabilidades** (Single Responsibility Principle) aplicado a la infraestructura de eventos. La organización por dominios con topics dedicados mejora escalabilidad, mantenibilidad, observabilidad y seguridad — exactamente los atributos de calidad que Kafka busca proporcionar.
 
+</details>
+
 ---
 
 ## Capítulo 6. Laboratorio guiado extendido
@@ -821,9 +827,9 @@ Cada pedido devuelve `201 Created` con el JSON del `OrderCreatedEvent`, incluyen
 
 | Pedido | Total | Regla Pago (≤ 250k) | Regla Inventario (≤ 300k) | Resultado Pago | Resultado Inventario |
 |--------|-------|---------------------|--------------------------|----------------|---------------------|
-| ORD-001 | 100000 | ✅ ≤ 250000 | ✅ ≤ 300000 | ✅ **APPROVED** | ✅ **RESERVED** |
-| ORD-002 | 260000 | ❌ > 250000 | ✅ ≤ 300000 | ❌ **REJECTED** | ✅ **RESERVED** |
-| ORD-003 | 350000 | ❌ > 250000 | ❌ > 300000 | ❌ **REJECTED** | ❌ **REJECTED** |
+| ORD-001 | 100000 | Si (100000 ≤ 250000) | Si (100000 ≤ 300000) | **APPROVED** | **RESERVED** |
+| ORD-002 | 260000 | No (260000 > 250000) | Si (260000 ≤ 300000) | **REJECTED** | **RESERVED** |
+| ORD-003 | 350000 | No (350000 > 250000) | No (350000 > 300000) | **REJECTED** | **REJECTED** |
 
 ---
 
@@ -868,17 +874,17 @@ Navegar a **http://localhost:8080** y seguir estos pasos para reconstruir el flu
 
 #### Paso 4: Eventos generados (resumen completo)
 
-| # | Evento | Topic | Clave | Partición (probable) | Offset (ejemplo) | Consumer Group (consumidor) |
-|---|--------|-------|-------|---------------------|------------------|----------------------------|
-| 1 | `order-created` | `orders` | ORD-001 | hash(ORD-001) % 3 | 0 | `payment-service`, `inventory-service`, `analytics-service` |
-| 2 | `payment-approved` | `payments` | ORD-001 | hash(ORD-001) % 3 | 0 | `notification-service`, `analytics-service` |
-| 3 | `inventory-reserved` | `inventory` | ORD-001 | hash(ORD-001) % 3 | 0 | `notification-service`, `analytics-service` |
-| 4 | `order-created` | `orders` | ORD-002 | hash(ORD-002) % 3 | 1 | `payment-service`, `inventory-service`, `analytics-service` |
-| 5 | `payment-rejected` | `payments` | ORD-002 | hash(ORD-002) % 3 | 1 | `notification-service`, `analytics-service` |
-| 6 | `inventory-reserved` | `inventory` | ORD-002 | hash(ORD-002) % 3 | 1 | `notification-service`, `analytics-service` |
-| 7 | `order-created` | `orders` | ORD-003 | hash(ORD-003) % 3 | 2 | `payment-service`, `inventory-service`, `analytics-service` |
-| 8 | `payment-rejected` | `payments` | ORD-003 | hash(ORD-003) % 3 | 2 | `notification-service`, `analytics-service` |
-| 9 | `inventory-rejected` | `inventory` | ORD-003 | hash(ORD-003) % 3 | 2 | `notification-service`, `analytics-service` |
+| # | Evento | Topic | Clave | Particion | Offset | Consumer Group (consumidor) |
+|---|--------|-------|-------|-----------|--------|----------------------------|
+| 1 | `order-created` | `orders` | ORD-001 | 0 | 0 | `payment-service`, `inventory-service`, `analytics-service` |
+| 2 | `payment-approved` | `payments` | ORD-001 | 0 | 0 | `notification-service`, `analytics-service` |
+| 3 | `inventory-reserved` | `inventory` | ORD-001 | 0 | 0 | `notification-service`, `analytics-service` |
+| 4 | `order-created` | `orders` | ORD-002 | 1 | 0 | `payment-service`, `inventory-service`, `analytics-service` |
+| 5 | `payment-rejected` | `payments` | ORD-002 | 1 | 0 | `notification-service`, `analytics-service` |
+| 6 | `inventory-reserved` | `inventory` | ORD-002 | 1 | 0 | `notification-service`, `analytics-service` |
+| 7 | `order-created` | `orders` | ORD-003 | 2 | 1 | `payment-service`, `inventory-service`, `analytics-service` |
+| 8 | `payment-rejected` | `payments` | ORD-003 | 2 | 1 | `notification-service`, `analytics-service` |
+| 9 | `inventory-rejected` | `inventory` | ORD-003 | 2 | 1 | `notification-service`, `analytics-service` |
 
 ---
 
@@ -984,7 +990,7 @@ Analytics Service: inventario REJECTED para pedido ORD-003
 
 #### Paso 8: Evidencia documental en Kafka UI
 
-| Sección en Kafka UI | Qué verificar |
+| Sección en Kafka UI | Que verificar |
 |---------------------|---------------|
 | **Topics** | Los 3 topics existen: `orders`, `payments`, `inventory` — cada uno con 3 particiones |
 | **Topics → orders → Messages** | 3 mensajes (uno por pedido) con clave = `orderId` y valor JSON con `status: "CREATED"` |
@@ -994,6 +1000,12 @@ Analytics Service: inventario REJECTED para pedido ORD-003
 | **Consumers → inventory-service** | Grupo activo, particiones 0,1,2 asignadas, lag = 0 |
 | **Consumers → notification-service** | Grupo activo, consumiendo de `payments` e `inventory`, lag = 0 |
 | **Consumers → analytics-service** | Grupo activo, consumiendo de `orders`, `payments` e `inventory`, lag = 0 |
+
+**Capturas de pantalla:**
+
+![Evidencia 6.1 — Topics y mensajes en Kafka UI](Images/Evidencia_6_1.png)
+
+![Evidencia 6.2 — Consumer Groups y lag en Kafka UI](Images/Evidencia_6_2.png)
 
 </details>
 
@@ -1009,7 +1021,8 @@ En sistemas distribuidos los errores son inevitables. Se clasifican en: **transi
 
 Diseñe una estrategia para manejar eventos fallidos en `inventory-service`. Indique cuándo reintentar, cuándo enviar a DLT, qué información revisar y cómo evitar reprocesamientos infinitos.
 
-
+<details>
+<summary><b>Desarrollo de la Actividad 7</b></summary>
 
 **Estrategia propuesta:**
 
@@ -1021,18 +1034,34 @@ Diseñe una estrategia para manejar eventos fallidos en `inventory-service`. Ind
 
 **Configuración de reintentos:**
 
-- Número máximo de reintentos:
-- Intervalo entre reintentos:
-- Backoff:
+- **Número máximo de reintentos:** 3
+- **Intervalo entre reintentos:** 2000 ms (2 segundos)
+- **Backoff:** Fijo (`FixedBackOff`), sin backoff exponencial para mantener simplicidad en el laboratorio. En producción se recomienda `ExponentialBackOff` con multiplicador 2.0
 
 **Dead Letter Topic:**
 
-- Nombre del DLT:
-- Información a registrar en el DLT:
+- **Nombre del DLT:** `inventory.DLT` (convención: `{topic_original}.DLT`)
+- **Información a registrar en el DLT:** El evento original completo (key + value + headers) más metadatos del error (timestamp, excepción original, intento de entrega). Spring Kafka con `DeadLetterPublishingRecoverer` preserva automáticamente el registro original y agrega headers como `DEAD_LETTER_TOPIC`, `DEAD_LETTER_PARTITION`, `DEAD_LETTER_OFFSET`, `DEAD_LETTER_REASON` y `DEAD_LETTER_EXCEPTION`
 
 **Estrategia de idempotencia:**
 
+Usar el `eventId` o `inventoryId` como identificador único en una tabla de eventos procesados (base de datos o almacén externo). Antes de procesar cada evento, verificar si ya fue procesado. Si ya existe, ignorarlo (log informativo). Si no existe, procesarlo y registrar el `eventId`. Esto evita duplicados por reprocesamiento de Kafka o reintentos del consumidor.
+
+```sql
+-- Tabla de idempotencia (ejemplo conceptual)
+CREATE TABLE processed_events (
+    event_id VARCHAR(100) PRIMARY KEY,
+    processed_at TIMESTAMP NOT NULL,
+    status VARCHAR(50)
+);
+```
+
 **¿Cómo evitar reprocesamientos infinitos?**
+
+1. **Reintentos limitados por configuración**: máximo 3 reintentos con `FixedBackOff(2000L, 3L)`. Después del tercer fallo, el evento se envía al DLT automáticamente.
+2. **Errores no recuperables sin reintento**: Excepciones como `DeserializationException`, `IllegalArgumentException` y `MessageConversionException` se envían directamente al DLT sin reintentar, ya que reintentar no corregiría el problema.
+3. **Monitoreo del DLT**: Si el DLT acumula eventos, un operador debe revisarlos manualmente o mediante un proceso automático de reparación. Si el evento se puede corregir, se re-publica al topic original.
+4. **Alerta por umbral de DLT**: Configurar una alerta cuando la cantidad de mensajes en cualquier DLT supere un umbral (ej. 10 mensajes en 5 minutos).
 
 </details>
 
@@ -1176,76 +1205,7 @@ El reto final integra todos los conceptos: diseñar una arquitectura basada en e
 
 ### Desarrollo del Reto Final
 
-<details>
-<summary><b>Documento técnico — Reto Final</b></summary>
-
-#### Descripción de la solución
-
-*(Complete aquí)*
-
-#### Arquitectura propuesta
-
-*(Diagrama o descripción)*
-
-#### Tabla de servicios
-
-| Servicio | Responsabilidad | Consumer Group | Topics que consume | Topics que produce |
-|----------|----------------|----------------|-------------------|-------------------|
-| order-service | | | | |
-| payment-service | | | | |
-| inventory-service | | | | |
-| invoice-service | | | | |
-| notification-service | | | | |
-| analytics-service | | | | |
-| audit-service | | | | |
-
-#### Tabla de eventos y topics
-
-| Evento | Topic | Clave | Descripción |
-|--------|-------|-------|-------------|
-| `order-created` | `orders` | `orderId` | |
-| `payment-approved` | `payments` | `orderId` | |
-| `payment-rejected` | `payments` | `orderId` | |
-| `inventory-reserved` | `inventory` | `orderId` | |
-| `inventory-rejected` | `inventory` | `orderId` | |
-| `invoice-generated` | `invoices` | `orderId` | |
-| `notification-sent` | `notifications` | `orderId` | |
-| `audit-record-created` | `audit` | `correlationId` | |
-
-#### Claves de particionamiento
-
-| Topic | Clave | Justificación |
-|-------|-------|---------------|
-| `orders` | `orderId` | |
-| `payments` | `orderId` | |
-| `inventory` | `orderId` | |
-| `invoices` | `orderId` | |
-| `notifications` | `orderId` | |
-| `audit` | `correlationId` | |
-
-#### Estrategia de errores
-
-| Tipo de error | Acción | Reintentos | DLT |
-|---------------|--------|-----------|-----|
-| Transitorio | | | |
-| Permanente | | | |
-| Negocio | | | |
-
-#### Riesgos identificados
-
-1.
-2.
-3.
-
-#### Justificación de decisiones arquitectónicas
-
-*(Complete aquí)*
-
-#### Consideraciones sobre consistencia eventual
-
-*(Complete aquí)*
-
-</details>
+El documento tecnico completo se encuentra en [RETO_FINAL.md](RETO_FINAL.md).
 
 ---
 
